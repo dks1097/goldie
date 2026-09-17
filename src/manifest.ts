@@ -26,7 +26,7 @@ import {
   variantFramePath,
 } from "./config.ts";
 import { execOrThrow } from "./exec.ts";
-import { FONTS, fontFilePath } from "./fonts.ts";
+import { CUSTOM_FONT_FALLBACK, FONTS, fontFilePath } from "./fonts.ts";
 import type { FrameGeometry } from "./frame.ts";
 import { imageSize } from "./image.ts";
 import { LAYOUTS, TEMPLATES } from "./layouts.ts";
@@ -191,14 +191,21 @@ export async function writeManifest(cfg: LoadedConfig): Promise<string> {
   // studio's preview and the exported PNGs use the same cuts. Without this the
   // browser would fall back to a system face and the studio would disagree with
   // the export for exactly the scripts theme.fontFiles exists to support.
-  for (const font of cfg.theme.fontFiles ?? []) {
+  for (const [i, font] of (cfg.theme.fontFiles ?? []).entries()) {
     const faces: Array<{ weight: number; url: string }> = [];
     for (const [weight, file] of Object.entries(font.files)) {
-      const name = `${font.family}-${weight}${extname(file)}`;
+      // A family is free text: it may hold a "/" or match a bundled file's
+      // name, and two may share a slug, hence the prefix and the index.
+      const name = `custom-${i}-${slug(font.family)}-${weight}${extname(file)}`;
       await copyFile(file, join(fontsDir, name));
       faces.push({ weight: Number(weight), url: `fonts/${name}` });
     }
-    fonts.push({ key: font.family, family: font.family, fallback: "sans-serif", faces });
+    fonts.push({
+      key: font.family,
+      family: font.family,
+      fallback: CUSTOM_FONT_FALLBACK,
+      faces,
+    });
   }
 
   // Decoration images, copied so the browser can draw the same layers.
@@ -298,6 +305,16 @@ export async function writeManifest(cfg: LoadedConfig): Promise<string> {
   const file = join(webDir, "store.json");
   await writeFile(file, JSON.stringify(manifest, null, 2));
   return file;
+}
+
+/** A font family as a safe file-name segment. */
+function slug(family: string): string {
+  return (
+    family
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "font"
+  );
 }
 
 async function readCaptureManifest(

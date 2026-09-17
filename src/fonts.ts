@@ -70,14 +70,22 @@ export function fontFilePath(file: string): string {
   return resolve(FONTS_DIR, file);
 }
 
-/** The `theme.fontFamily` value for a bundled font, or the system stack for "system". */
-export function fontStack(key: string): string {
+/** Generic fallback behind a config-supplied family, in the canvas and the studio alike. */
+export const CUSTOM_FONT_FALLBACK = "sans-serif";
+
+/**
+ * The `theme.fontFamily` value for a bundled font, or the system stack for
+ * "system". A family the config supplies itself (`theme.fontFiles`) is a valid
+ * key too: the studio's font picker lists those and exports with `--font <family>`.
+ */
+export function fontStack(key: string, custom: CustomFont[] = []): string {
   if (key === "system") return SYSTEM_FONT;
   const font = (FONTS as Record<string, BundledFont>)[key];
-  if (!font) {
-    throw new Error(`Unknown font "${key}". Available: system, ${FONT_KEYS.join(", ")}`);
-  }
-  return `"${font.family}", ${font.fallback}`;
+  if (font) return `"${font.family}", ${font.fallback}`;
+  const own = custom.find((f) => f.family === key);
+  if (own) return `"${own.family}", ${CUSTOM_FONT_FALLBACK}`;
+  const available = ["system", ...FONT_KEYS, ...custom.map((f) => f.family)];
+  throw new Error(`Unknown font "${key}". Available: ${available.join(", ")}`);
 }
 
 /**
@@ -132,7 +140,6 @@ export function registerFonts(custom: CustomFont[] = []) {
     for (const file of Object.values(font.files)) {
       const key = `${font.family}\u0000${file}`;
       if (registeredCustom.has(key)) continue;
-      registeredCustom.add(key);
       if (!GlobalFonts.registerFromPath(file, font.family)) {
         throw new Error(
           `Could not register font file "${file}" as "${font.family}". ` +
@@ -140,6 +147,8 @@ export function registerFonts(custom: CustomFont[] = []) {
             `the config file, and the file must be a format skia can read (ttf, otf).`,
         );
       }
+      // Only once it succeeded, so a caught failure throws again on the next call.
+      registeredCustom.add(key);
     }
   }
 }

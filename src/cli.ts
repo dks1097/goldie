@@ -42,7 +42,7 @@ Options
   --locale <code>   Only this locale (default: every locale in the config)
   --background <css>  Override theme.background for this run (also clears per-scene backgrounds); "transparent" keeps alpha
   --frame <variant>   Override the bezel variant of its device for this run, repeatable (${FRAME_VARIANTS.join(" | ")})
-  --font <key>        Override theme.fontFamily for this run (system | ${FONT_KEYS.join(" | ")})
+  --font <key>        Override theme.fontFamily for this run (system | ${FONT_KEYS.join(" | ")} | a theme.fontFiles family)
   --template <key>    Override theme.template for this run (${TEMPLATE_KEYS.join(" | ")}; "none" for one layout)
   --layout <key>      Override theme.layout for this run (${LAYOUT_KEYS.join(" | ")})
   --screen-only       Render bare screens with no bezel for this run
@@ -85,7 +85,7 @@ async function main() {
   applyDesign(cfg, {
     background: opt("background"),
     frames,
-    fontFamily: font ? fontStack(font) : undefined, // throws on an unknown key
+    fontFamily: font ? fontStack(font, cfg.theme.fontFiles) : undefined, // throws on an unknown key
     template: opt("template") === "none" ? "" : opt("template"),
     layout: opt("layout") as LayoutKey | undefined,
     screenOnly: argv.includes("--screen-only") ? true : undefined,

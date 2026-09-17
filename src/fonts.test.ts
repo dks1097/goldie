@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FONTS, fontFilePath, registerFonts, withGlyphFallback } from "./fonts.ts";
+import { FONTS, fontFilePath, fontStack, registerFonts, withGlyphFallback } from "./fonts.ts";
 
 describe("withGlyphFallback", () => {
   test("appends both bundled fallbacks so unknown glyphs have somewhere to fall", () => {
@@ -21,6 +21,23 @@ describe("withGlyphFallback", () => {
     const stack = withGlyphFallback(`"${arabic}"`);
     expect(stack.match(new RegExp(arabic, "g"))).toHaveLength(1);
     expect(stack).toContain(FONTS["noto-sans-sc"].family);
+  });
+});
+
+describe("fontStack", () => {
+  const custom = [{ family: "Zain", files: { 400: "/fonts/Zain-400.ttf" } }];
+
+  test("resolves a bundled key and the system stack", () => {
+    expect(fontStack("lato")).toBe('"Lato", system-ui, sans-serif');
+    expect(fontStack("system")).toContain("system-ui");
+  });
+
+  test("resolves a config-supplied family, as the studio's export passes it", () => {
+    expect(fontStack("Zain", custom)).toBe('"Zain", sans-serif');
+  });
+
+  test("names the config's families when the key is unknown", () => {
+    expect(() => fontStack("Nope", custom)).toThrow(/Available: system, .*Zain/);
   });
 });
 
@@ -46,5 +63,14 @@ describe("registerFonts", () => {
     const bogus = join(dir, "not-a-font.ttf");
     writeFileSync(bogus, "this is not a font");
     expect(() => registerFonts([{ family: "GoldieBogus", files: { 400: bogus } }])).toThrow(bogus);
+  });
+
+  test("throws again when a failed registration is retried", () => {
+    const dir = mkdtempSync(join(tmpdir(), "goldie-fonts-"));
+    const bogus = join(dir, "not-a-font.ttf");
+    writeFileSync(bogus, "this is not a font");
+    const custom = [{ family: "GoldieBogusRetry", files: { 400: bogus } }];
+    expect(() => registerFonts(custom)).toThrow(bogus);
+    expect(() => registerFonts(custom)).toThrow(bogus);
   });
 });
