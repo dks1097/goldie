@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import * as argent from "./argent.ts";
@@ -279,13 +279,23 @@ export async function shutdown(key: DeviceKey, udid: string): Promise<void> {
  * then fails its native-devtools handshake).
  */
 /*
- * Values are written and read back as JSON via plutil rather than through
- * `defaults`, which cannot address a simulator's global-preferences file at
- * all: `defaults` resolves ".GlobalPreferences" to NSGlobalDomain and discards
- * the directory in front of it, so the write lands on the *host* account. See
+ * Values are written and read back via plutil rather than through `defaults`,
+ * which cannot address a simulator's global-preferences file at all: `defaults`
+ * resolves ".GlobalPreferences" to NSGlobalDomain and discards the directory in
+ * front of it, so the write lands on the *host* account. See
  * pinKeyboardAndLocale.
+ *
+ * `read` is the plutil -extract format. Scalars have to be read as "raw":
+ * a bare boolean or string is no valid JSON document, so extracting one as
+ * "json" exits 1. Only containers can be read as "json".
  */
-type Pref = { domain: string; key: string; write: string[]; expect: string };
+type Pref = {
+  domain: string;
+  key: string;
+  write: string[];
+  read: "raw" | "json";
+  expect: string;
+};
 
 function keyboardAndLocalePrefs(locale: string): Pref[] {
   // The whole tag, region included. Dropping the region leaves iOS to choose
@@ -304,6 +314,7 @@ function keyboardAndLocalePrefs(locale: string): Pref[] {
     domain,
     key,
     write: ["-bool", "false"],
+    read: "raw",
     expect: "false",
   });
   return [
@@ -316,12 +327,14 @@ function keyboardAndLocalePrefs(locale: string): Pref[] {
       domain: ".GlobalPreferences",
       key: "AppleLocale",
       write: ["-string", locale.replace("-", "_")],
-      expect: JSON.stringify(locale.replace("-", "_")),
+      read: "raw",
+      expect: locale.replace("-", "_"),
     },
     {
       domain: ".GlobalPreferences",
       key: "AppleLanguages",
       write: ["-json", JSON.stringify([language])],
+      read: "json",
       expect: JSON.stringify([language]),
     },
   ];
@@ -360,6 +373,9 @@ function plistPath(udid: string, domain: string): string {
  * confused with.
  */
 export async function pinKeyboardAndLocale(udid: string, locale: string): Promise<void> {
+  // A simulator that has never been booted has no Preferences directory, and
+  // plutil -create does not make missing parents.
+  await mkdir(prefsDir(udid), { recursive: true });
   for (const pref of keyboardAndLocalePrefs(locale)) {
     const path = plistPath(udid, pref.domain);
     // -replace needs a plist to replace into, and a simulator that has never
@@ -374,7 +390,7 @@ async function keyboardAndLocalePinned(udid: string, locale: string): Promise<bo
   for (const pref of keyboardAndLocalePrefs(locale)) {
     const path = plistPath(udid, pref.domain);
     if (!existsSync(path)) return false;
-    const r = await exec("plutil", ["-extract", pref.key, "json", "-o", "-", path], {
+    const r = await exec("plutil", ["-extract", pref.key, pref.read, "-o", "-", path], {
       quiet: true,
     });
     if (r.code !== 0) return false;
