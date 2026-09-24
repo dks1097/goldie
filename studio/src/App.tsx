@@ -1,9 +1,4 @@
-import {
-  CameraIcon,
-  type LucideIcon,
-  SmartphoneIcon,
-  TriangleAlertIcon,
-} from "lucide-react";
+import { CameraIcon, type LucideIcon, SmartphoneIcon, TriangleAlertIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { EmptyState } from "./components/EmptyState";
 import { Sidebar } from "./components/Sidebar";
@@ -54,10 +49,9 @@ const ENABLE_PLATFORM: Record<
 const SAVE_DEBOUNCE_MS = 500;
 
 export function App() {
-  const [loaded, setLoaded] = useState<{
-    manifest: StoreManifest;
-    design: SavedDesign;
-  } | null>(null);
+  const [loaded, setLoaded] = useState<{ manifest: StoreManifest; design: SavedDesign } | null>(
+    null,
+  );
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
@@ -93,13 +87,7 @@ export function App() {
  * the config when a stored value no longer applies (a device or frame
  * variant removed from the config, for instance).
  */
-function Loaded({
-  manifest,
-  saved,
-}: {
-  manifest: StoreManifest;
-  saved: SavedDesign;
-}) {
+function Loaded({ manifest, saved }: { manifest: StoreManifest; saved: SavedDesign }) {
   const design = manifest.design;
   const view = loadView(manifest.app.name);
   // Both store tabs render even when only one platform is configured, so the
@@ -113,9 +101,7 @@ function Loaded({
         "ios");
   const [platform, setPlatform] = useState(initialPlatform);
   const [device, setDevice] = useState(() => {
-    const devices = manifest.devices.filter(
-      (d) => d.platform === initialPlatform,
-    );
+    const devices = manifest.devices.filter((d) => d.platform === initialPlatform);
     return devices.some((d) => d.key === view.device)
       ? (view.device as string)
       : (devices[0]?.key ?? manifest.devices[0]?.key ?? "");
@@ -123,8 +109,7 @@ function Loaded({
   const selectPlatform = (p: Platform) => {
     setPlatform(p);
     const devices = manifest.devices.filter((d) => d.platform === p);
-    if (devices.length > 0 && !devices.some((d) => d.key === device))
-      setDevice(devices[0]!.key);
+    if (devices.length > 0 && !devices.some((d) => d.key === device)) setDevice(devices[0]!.key);
   };
   const [locale, setLocale] = useState(
     view.locale && manifest.locales.includes(view.locale)
@@ -132,12 +117,9 @@ function Loaded({
       : (manifest.locales[0] ?? ""),
   );
   const [dark, setDark] = useState(
-    new URLSearchParams(window.location.search).get("dark") === "1" ||
-      view.dark === true,
+    new URLSearchParams(window.location.search).get("dark") === "1" || view.dark === true,
   );
-  const [stripView, setStripView] = useState<StripView>(
-    view.view === "grid" ? "grid" : "strip",
-  );
+  const [stripView, setStripView] = useState<StripView>(view.view === "grid" ? "grid" : "strip");
   const knownLayout = (key: string | undefined) =>
     key && design.layouts.some((l) => l.key === key) ? key : undefined;
   const { state, set } = useHistory<DesignState>(() => ({
@@ -172,10 +154,7 @@ function Loaded({
   // The frame picker edits the variant of the device on show; "" means custom art.
   const frame = frames[device] ?? "";
   const setFrame = (value: string) =>
-    set(`frame:${device}`, (prev) => ({
-      ...prev,
-      frames: { ...prev.frames, [device]: value },
-    }));
+    set(`frame:${device}`, (prev) => ({ ...prev, frames: { ...prev.frames, [device]: value } }));
   const setFontFamily = field("fontFamily");
   const setLayout = field("layout");
   // Picking a template replaces the strip's layout sequence, so any per-scene
@@ -192,11 +171,7 @@ function Loaded({
       else delete next[sceneId];
       return { ...prev, sceneLayouts: next };
     });
-  const setSceneCopy = (
-    sceneId: string,
-    fieldName: "headline" | "subhead",
-    text: string,
-  ) =>
+  const setSceneCopy = (sceneId: string, fieldName: "headline" | "subhead", text: string) =>
     set(`copy:${sceneId}:${fieldName}`, (prev) => ({
       ...prev,
       copy: {
@@ -209,13 +184,7 @@ function Loaded({
     }));
 
   useEffect(() => {
-    storeView(manifest.app.name, {
-      platform,
-      device,
-      locale,
-      dark,
-      view: stripView,
-    });
+    storeView(manifest.app.name, { platform, device, locale, dark, view: stripView });
   }, [manifest.app.name, platform, device, locale, dark, stripView]);
 
   // Write the design to disk once it has sat still for a moment; a drag on
@@ -230,9 +199,7 @@ function Loaded({
       return;
     }
     const timer = setTimeout(() => {
-      const chosen = Object.fromEntries(
-        Object.entries(frames).filter(([, v]) => v),
-      );
+      const chosen = Object.fromEntries(Object.entries(frames).filter(([, v]) => v));
       saveDesign({
         background,
         frames: Object.keys(chosen).length > 0 ? chosen : undefined,
@@ -242,25 +209,14 @@ function Loaded({
         template: template === CUSTOM_TEMPLATE ? undefined : template,
         layout,
         screenOnly,
-        sceneLayouts:
-          Object.keys(sceneLayouts).length > 0 ? sceneLayouts : undefined,
+        sceneLayouts: Object.keys(sceneLayouts).length > 0 ? sceneLayouts : undefined,
       }).then(
         () => setSaveError(null),
         (e: Error) => setSaveError(e.message),
       );
     }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [
-    background,
-    frames,
-    fontFamily,
-    copy,
-    order,
-    template,
-    layout,
-    screenOnly,
-    sceneLayouts,
-  ]);
+  }, [background, frames, fontFamily, copy, order, template, layout, screenOnly, sceneLayouts]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
@@ -279,30 +235,22 @@ function Loaded({
   // substitute a system font for characters the chosen stack cannot draw - and
   // the preview would look right where the export does not. Only the bare stack
   // is saved to goldie.design.json.
-  const previewFontFamily = ["noto-sans-sc", "noto-sans-arabic"].reduce(
-    (stack, key) => {
-      const font = design.fonts.find((f) => f.key === key);
-      return font && !stack.includes(font.family)
-        ? `${stack}, "${font.family}"`
-        : stack;
-    },
-    fontFamily,
-  );
+  const previewFontFamily = ["noto-sans-sc", "noto-sans-arabic"].reduce((stack, key) => {
+    const font = design.fonts.find((f) => f.key === key);
+    return font && !stack.includes(font.family) ? `${stack}, "${font.family}"` : stack;
+  }, fontFamily);
 
-  const platformDevices = manifest.devices.filter(
-    (d) => d.platform === platform,
-  );
-  const spec =
-    platformDevices.find((d) => d.key === device) ?? platformDevices[0];
+  const platformDevices = manifest.devices.filter((d) => d.platform === platform);
+  const spec = platformDevices.find((d) => d.key === device) ?? platformDevices[0];
   const deviceCaptures = spec ? design.captures[spec.key] : undefined;
-  const captures = deviceCaptures?.byLocale?.[locale] ?? deviceCaptures;
-  const firstVariant = design.frameVariants.find(
-    (v) => v.device === device,
-  )?.key;
+  // With localizedCaptures a locale shows only its own captures: falling back to
+  // another locale's would put the wrong language on screen.
+  const captures = deviceCaptures?.byLocale ? deviceCaptures.byLocale[locale] : deviceCaptures;
+  const missingLocale = Boolean(deviceCaptures?.byLocale) && !captures;
+  const firstVariant = design.frameVariants.find((v) => v.device === device)?.key;
   const frameUrl = frame
     ? `frames/${frame}.png`
-    : (design.customFrameUrl ??
-      `frames/${firstVariant ?? design.frameVariants[0]?.key}.png`);
+    : (design.customFrameUrl ?? `frames/${firstVariant ?? design.frameVariants[0]?.key}.png`);
 
   return (
     <div className="flex h-full bg-stage p-3 text-foreground">
@@ -364,9 +312,17 @@ function Loaded({
           ) : spec ? (
             <EmptyState
               icon={CameraIcon}
-              title={`No screenshots for the ${deviceLabel(spec)} yet`}
+              title={
+                missingLocale
+                  ? `No ${locale} screenshots for the ${deviceLabel(spec)} yet`
+                  : `No screenshots for the ${deviceLabel(spec)} yet`
+              }
               body={`Ask your coding agent to capture the ${deviceLabel(spec)}, or run:`}
-              command="goldie capture && goldie manifest"
+              command={
+                missingLocale
+                  ? `goldie capture --device ${spec.key} --locale ${locale} && goldie manifest`
+                  : "goldie capture && goldie manifest"
+              }
             />
           ) : (
             <EmptyState {...ENABLE_PLATFORM[platform]} />
@@ -374,9 +330,7 @@ function Loaded({
         </main>
       </div>
 
-      {saveError ? (
-        <Toast message={`Could not save design: ${saveError}`} />
-      ) : null}
+      {saveError ? <Toast message={`Could not save design: ${saveError}`} /> : null}
     </div>
   );
 }
@@ -399,20 +353,12 @@ type DesignState = {
 };
 
 /** The saved variant per device when it is drawn for that device, else the config's. */
-function initialFrames(
-  design: Design,
-  saved: SavedDesign,
-): Record<string, string> {
+function initialFrames(design: Design, saved: SavedDesign): Record<string, string> {
   const known = (device: string, key: string | undefined) =>
-    key &&
-    design.frameVariants.some((v) => v.key === key && v.device === device)
-      ? key
-      : undefined;
+    key && design.frameVariants.some((v) => v.key === key && v.device === device) ? key : undefined;
   const out: Record<string, string> = {};
   for (const [device, variant] of Object.entries(design.frames)) {
-    const legacy = design.frameVariants.find(
-      (v) => v.key === saved.frame,
-    )?.device;
+    const legacy = design.frameVariants.find((v) => v.key === saved.frame)?.device;
     const pick =
       known(device, saved.frames?.[device]) ??
       (legacy === device ? saved.frame : undefined) ??
@@ -424,10 +370,7 @@ function initialFrames(
 }
 
 function initialTemplate(design: Design, saved: SavedDesign): string {
-  if (
-    saved.template !== undefined &&
-    design.templates.some((t) => t.key === saved.template)
-  )
+  if (saved.template !== undefined && design.templates.some((t) => t.key === saved.template))
     return saved.template;
   if (saved.template === "") return "";
   if (Array.isArray(design.template)) return CUSTOM_TEMPLATE;
