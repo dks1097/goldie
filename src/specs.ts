@@ -31,6 +31,11 @@ export type DeviceSpec = {
    */
   simulatorName?: string;
   /**
+   * Other device type names with the same screen, tried in order when
+   * `simulatorName` is not installed (the previous chip generation, say).
+   */
+  simulatorAliases?: string[];
+  /**
    * Accepted AVD hardware profiles (`hw.device.name` in the AVD's config.ini),
    * in boot-preference order. Android only - a running emulator qualifies only
    * when its profile is listed, so captures always come from the intended
@@ -74,7 +79,9 @@ export const DEVICES: Record<DeviceKey, DeviceSpec> = {
     label: "13",
     platform: "ios",
     type: "ipad",
-    simulatorName: "iPad Pro 13-inch (M4)",
+    // The M5 and M4 share the 2064x2752 display, so either captures at the upload size.
+    simulatorName: "iPad Pro 13-inch (M5)",
+    simulatorAliases: ["iPad Pro 13-inch (M4)"],
     copyScale: 1.3,
     native: { width: 2064, height: 2752 },
     screenshot: { width: 2064, height: 2752 },
