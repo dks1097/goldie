@@ -105,8 +105,9 @@ export async function capture(
 
   for (const scene of cfg.scenes.filter(isScreenshot)) {
     console.log(`  screenshot ${scene.id}`);
-    const report = await runFlow(flowPath(cfg, scene.flow), udid);
-    if (!report.ok) throw new FlowFailure(scene.id, flowPath(cfg, scene.flow), udid, report);
+    const path = flowPath(cfg, scene.flow, deviceKey);
+    const report = await runFlow(path, udid);
+    if (!report.ok) throw new FlowFailure(scene.id, path, udid, report);
 
     // The flow runner pins and then restores the status bar around a run, so it
     // is re-pinned per capture rather than once at setup. The settle matters:
@@ -171,6 +172,13 @@ async function captureSegments(
 ): Promise<CaptureManifest["preview"]> {
   const clips: NonNullable<CaptureManifest["preview"]>["clips"] = [];
 
+  if (scene.setup) {
+    console.log("  preview setup");
+    const path = flowPath(cfg, scene.setup, deviceKey);
+    const report = await runFlow(path, udid);
+    if (!report.ok) throw new FlowFailure(`${scene.id}/setup`, path, udid, report);
+  }
+
   // Segment flows are fragments that chain from the Issues list. Restarting
   // here rather than inside segment 1 keeps the cold-start frames - a blank
   // screen while the bundle loads - out of the recording.
@@ -194,14 +202,9 @@ async function captureSegments(
     let failure: FlowFailure | null = null;
     let stopped: { video: string; durationMs: number } | null = null;
     try {
-      const report = await runFlow(flowPath(cfg, segment.flow), udid);
-      if (!report.ok)
-        failure = new FlowFailure(
-          `${scene.id}/${segment.id}`,
-          flowPath(cfg, segment.flow),
-          udid,
-          report,
-        );
+      const path = flowPath(cfg, segment.flow, deviceKey);
+      const report = await runFlow(path, udid);
+      if (!report.ok) failure = new FlowFailure(`${scene.id}/${segment.id}`, path, udid, report);
       if (segment.holdSeconds) await sleep(segment.holdSeconds * 1000);
     } finally {
       // Stop even on failure, or the next segment cannot start a recording.

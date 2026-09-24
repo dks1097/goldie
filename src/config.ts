@@ -103,6 +103,12 @@ export type Decoration =
 export type PreviewScene = {
   kind: "preview";
   id: string;
+  /**
+   * Flow run once before the first segment, and not recorded: it puts the app
+   * in the state the story opens on, e.g. cancelling a booking the screenshot
+   * scenes needed. The app is restarted after it, as before any preview.
+   */
+  setup?: string;
   segments: Array<{
     id: string;
     /** Flow in the app's `.argent/flows`, same forms as a screenshot scene's. */
@@ -602,10 +608,20 @@ export function deviceFrame(
 
 /**
  * Absolute path to a scene's flow YAML. A name or a relative path resolves
- * against `flowsDir`; `.yaml` is added when the value has no extension.
+ * against `flowsDir`; `.yaml` is added when the value has no extension. A
+ * device with its own copy under `flowsDir/<device>/` replays that instead:
+ * flows tap by position, and an iPad lays the same screens out differently.
  */
-export function flowPath(cfg: LoadedConfig, flow: string): string {
+export function flowPath(
+  cfg: Pick<LoadedConfig, "flowsDir">,
+  flow: string,
+  deviceKey?: DeviceKey,
+): string {
   const file = flow.endsWith(".yaml") || flow.endsWith(".yml") ? flow : `${flow}.yaml`;
+  if (deviceKey) {
+    const own = resolve(cfg.flowsDir, deviceKey, file);
+    if (existsSync(own)) return own;
+  }
   return resolve(cfg.flowsDir, file);
 }
 
