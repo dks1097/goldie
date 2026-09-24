@@ -165,16 +165,26 @@ export async function doctor(cfg: LoadedConfig): Promise<boolean> {
     fix: `Create ${cfg.flowsDir}   (or set flowsDir in goldie.config.ts)`,
   });
 
+  // Each device replays its own copy of a flow when it has one, so every
+  // device's resolution is checked; a flow shared by all is listed once.
+  const checked = new Set<string>();
   for (const scene of cfg.scenes) {
-    const flows = scene.kind === "preview" ? scene.segments.map((s) => s.flow) : [scene.flow];
+    const flows =
+      scene.kind === "preview"
+        ? [...(scene.setup ? [scene.setup] : []), ...scene.segments.map((s) => s.flow)]
+        : [scene.flow];
     for (const f of flows) {
-      const path = flowPath(cfg, f);
-      checks.push({
-        name: `flow ${f}`,
-        ok: existsSync(path),
-        detail: path,
-        fix: "Record or author it under the flows dir, or fix the name in goldie.config.ts",
-      });
+      for (const key of cfg.devices) {
+        const path = flowPath(cfg, f, key);
+        if (checked.has(path)) continue;
+        checked.add(path);
+        checks.push({
+          name: path === flowPath(cfg, f) ? `flow ${f}` : `flow ${key}/${f}`,
+          ok: existsSync(path),
+          detail: path,
+          fix: "Record or author it under the flows dir, or fix the name in goldie.config.ts",
+        });
+      }
     }
   }
 
