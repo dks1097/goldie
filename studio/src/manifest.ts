@@ -63,6 +63,8 @@ export type BundledFont = {
 export type DeviceCaptures = {
   screenshots: Array<{ sceneId: string; url: string }>;
   clips: Array<{ segmentId: string; url: string; durationSeconds: number }> | null;
+  /** Each locale's own captures when the config sets localizedCaptures. */
+  byLocale?: Record<string, Omit<DeviceCaptures, "byLocale">>;
 };
 
 export type Design = {
