@@ -26,21 +26,24 @@ import { DesignPanel } from "./DesignPanel";
 import { ExportPanel } from "./ExportPanel";
 import type { StripView } from "./Strip";
 
+export type DeviceType = "iphone" | "ipad" | "android";
+
 /**
- * The device-type rows, in display order. An entry without a platform renders
- * disabled: iPad stays that way until goldie can capture iPads, which then
- * needs a platform of its own here and in the app's view state.
+ * The device-type rows, in display order. iPhone and iPad share the ios
+ * platform (one App Store listing); a row picks the platform and the first
+ * configured device of its type.
  */
-const DEVICE_TYPES: Array<{
-  key: string;
-  icon: LucideIcon;
-  label: string;
-  platform?: Platform;
-}> = [
-  { key: "iphone", icon: SmartphoneIcon, label: "iPhone", platform: "ios" },
+const DEVICE_TYPES: Array<{ key: DeviceType; icon: LucideIcon; label: string }> = [
+  { key: "iphone", icon: SmartphoneIcon, label: "iPhone" },
   { key: "ipad", icon: TabletIcon, label: "iPad" },
-  { key: "android", icon: PlayIcon, label: "Android", platform: "android" },
+  { key: "android", icon: PlayIcon, label: "Android" },
 ];
+
+/** The rail row a device key belongs to: iPad keys start with "ipad". */
+export function deviceTypeOf(key: string, platform: Platform): DeviceType {
+  if (platform === "android") return "android";
+  return key.startsWith("ipad") ? "ipad" : "iphone";
+}
 
 /**
  * The left rail: the goldie wordmark with the view (one paged row or a
@@ -54,7 +57,7 @@ export function Sidebar({
   device,
   locale,
   dark,
-  onPlatform,
+  onDeviceType,
   onDevice,
   onLocale,
   onDark,
@@ -79,7 +82,7 @@ export function Sidebar({
   device: string;
   locale: string;
   dark: boolean;
-  onPlatform: (v: Platform) => void;
+  onDeviceType: (v: DeviceType) => void;
   onDevice: (v: string) => void;
   onLocale: (v: string) => void;
   onDark: (v: boolean) => void;
@@ -101,6 +104,11 @@ export function Sidebar({
   onLayout: (v: string) => void;
   onScreenOnly: (v: boolean) => void;
 }) {
+  const deviceType = deviceTypeOf(device, platform);
+  // The device picker lists the chosen type's devices only (iPhone sizes, say).
+  const typeDevices = manifest.devices.filter(
+    (d) => deviceTypeOf(d.key, d.platform) === deviceType,
+  );
   const platformDevices = manifest.devices.filter((d) => d.platform === platform);
   return (
     <aside className="flex w-[300px] shrink-0 flex-col overflow-hidden rounded-2xl border border-sidebar-border bg-sidebar text-sidebar-foreground">
@@ -134,19 +142,18 @@ export function Sidebar({
         {/* Both stores always show, so an iOS-only setup still surfaces that
             Google Play screenshots exist (and vice versa). */}
         <RadioGroupPrimitive.Root
-          value={platform === "ios" ? "iphone" : "android"}
+          value={deviceType}
           onValueChange={(key) => {
-            const picked = DEVICE_TYPES.find((t) => t.key === key)?.platform;
-            if (picked) onPlatform(picked);
+            const picked = DEVICE_TYPES.find((t) => t.key === key)?.key;
+            if (picked) onDeviceType(picked);
           }}
           aria-label="Device type"
           className="grid grid-cols-3 gap-2 px-5 pt-4"
         >
-          {DEVICE_TYPES.map(({ key, icon: Icon, label, platform: target }) => (
+          {DEVICE_TYPES.map(({ key, icon: Icon, label }) => (
             <RadioGroupPrimitive.Item
               key={key}
               value={key}
-              disabled={!target}
               className={cn(
                 "group relative flex flex-col items-center gap-1 rounded-lg border border-transparent px-1 py-2.5 text-xs font-medium text-muted-foreground transition-colors",
                 "hover:not-data-[state=checked]:bg-muted/60 hover:text-foreground",
@@ -157,22 +164,17 @@ export function Sidebar({
             >
               <Icon className="size-4 shrink-0" aria-hidden />
               <span>{label}</span>
-              {target ? null : (
-                <span className="absolute top-1 right-1.5 text-[9px] font-normal text-muted-foreground/70">
-                  Soon
-                </span>
-              )}
             </RadioGroupPrimitive.Item>
           ))}
         </RadioGroupPrimitive.Root>
-        {platformDevices.length > 1 || manifest.locales.length > 1 ? (
+        {typeDevices.length > 1 || manifest.locales.length > 1 ? (
           <div className="flex flex-col gap-4 p-5">
-            {platformDevices.length > 1 ? (
+            {typeDevices.length > 1 ? (
               <Field label="Device">
                 <Select
                   value={device}
                   onChange={onDevice}
-                  options={platformDevices.map((d) => [
+                  options={typeDevices.map((d) => [
                     d.key,
                     d.platform === "ios" ? `${d.label}"` : d.label,
                   ])}
