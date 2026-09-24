@@ -10,6 +10,7 @@ import {
   isFrameVariant,
   type LoadedConfig,
   loadConfig,
+  selectLocales,
   VARIANT_DEVICE,
   validateLayouts,
 } from "./config.ts";
@@ -97,7 +98,7 @@ async function main() {
     throw new Error(`Unknown device "${only}". Available: ${DEVICE_KEYS.join(", ")}`);
   }
   const devices = only ? [only] : cfg.devices;
-  const locales = opt("locale") ? [opt("locale")!] : cfg.locales;
+  const locales = selectLocales(cfg.locales, opt("locale"));
 
   switch (command) {
     case "doctor":

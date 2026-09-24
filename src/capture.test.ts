@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { captureLocales, capturesPerLocale, rawDirFor } from "./capture.ts";
+import { selectLocales } from "./config.ts";
 
 const outDir = "/tmp/app/goldie/out";
 const locales = ["pt-PT", "en-US"];
@@ -27,5 +28,17 @@ describe("localizedCaptures", () => {
     expect(capturesPerLocale(cfg, "pixel-10-pro")).toBe(false);
     expect(rawDirFor(cfg, "pixel-10-pro", "en-US")).toBe(join(outDir, "raw", "pixel-10-pro"));
     expect(captureLocales(cfg, "pixel-10-pro", ["en-US"])).toEqual(["pt-PT"]);
+  });
+});
+
+describe("--locale", () => {
+  test("runs every configured locale, or the one requested", () => {
+    expect(selectLocales(locales)).toEqual(locales);
+    expect(selectLocales(locales, "en-US")).toEqual(["en-US"]);
+  });
+
+  test("rejects a locale outside the config, so it never becomes a path", () => {
+    expect(() => selectLocales(locales, "en-us")).toThrow('Unknown locale "en-us"');
+    expect(() => selectLocales(locales, "../../outside")).toThrow("Unknown locale");
   });
 });
