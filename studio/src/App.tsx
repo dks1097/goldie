@@ -1,7 +1,13 @@
-import { CameraIcon, type LucideIcon, SmartphoneIcon, TriangleAlertIcon } from "lucide-react";
+import {
+  CameraIcon,
+  type LucideIcon,
+  SmartphoneIcon,
+  TabletIcon,
+  TriangleAlertIcon,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { EmptyState } from "./components/EmptyState";
-import { Sidebar } from "./components/Sidebar";
+import { type DeviceType, deviceTypeOf, Sidebar } from "./components/Sidebar";
 import { Strip, type StripView } from "./components/Strip";
 import { useHistory } from "./lib/useHistory";
 import {
@@ -23,19 +29,25 @@ export const CUSTOM_TEMPLATE = "__custom__";
 export type Platform = "ios" | "android";
 
 /**
- * Shown when a store's tab is selected but its device is not in the config.
- * The chip holds the ask to hand a coding agent, which knows the config
- * changes and capture steps from the goldie skill.
+ * Shown when a device-type row is selected but no device of that type is in
+ * the config. The chip holds the ask to hand a coding agent, which knows the
+ * config changes and capture steps from the goldie skill.
  */
-const ENABLE_PLATFORM: Record<
-  Platform,
+const ENABLE_DEVICE_TYPE: Record<
+  DeviceType,
   { icon: LucideIcon; title: string; body: string; command: string }
 > = {
-  ios: {
+  iphone: {
     icon: SmartphoneIcon,
     title: "No App Store screenshots yet",
     body: "Ask your coding agent to set them up:",
     command: "create App Store screenshots using goldie",
+  },
+  ipad: {
+    icon: TabletIcon,
+    title: "No iPad screenshots yet",
+    body: "Ask your coding agent to add the iPad:",
+    command: "add iPad screenshots using goldie",
   },
   android: {
     icon: SmartphoneIcon,
@@ -106,10 +118,14 @@ function Loaded({ manifest, saved }: { manifest: StoreManifest; saved: SavedDesi
       ? (view.device as string)
       : (devices[0]?.key ?? manifest.devices[0]?.key ?? "");
   });
-  const selectPlatform = (p: Platform) => {
+  // A rail row picks its platform and the first configured device of its type;
+  // with none configured the device stays the bare type ("ipad"), which the
+  // stage shows as the empty state for that type.
+  const selectDeviceType = (type: DeviceType) => {
+    const p: Platform = type === "android" ? "android" : "ios";
     setPlatform(p);
-    const devices = manifest.devices.filter((d) => d.platform === p);
-    if (devices.length > 0 && !devices.some((d) => d.key === device)) setDevice(devices[0]!.key);
+    const match = manifest.devices.find((d) => deviceTypeOf(d.key, d.platform) === type);
+    setDevice(match?.key ?? type);
   };
   const [locale, setLocale] = useState(
     view.locale && manifest.locales.includes(view.locale)
@@ -241,7 +257,12 @@ function Loaded({ manifest, saved }: { manifest: StoreManifest; saved: SavedDesi
   }, fontFamily);
 
   const platformDevices = manifest.devices.filter((d) => d.platform === platform);
-  const spec = platformDevices.find((d) => d.key === device) ?? platformDevices[0];
+  // Only a device of the selected type stands in: an iPad row with no iPad in
+  // the config shows its empty state, not the iPhone's screenshots.
+  const selectedType = deviceTypeOf(device, platform);
+  const spec =
+    platformDevices.find((d) => d.key === device) ??
+    platformDevices.find((d) => deviceTypeOf(d.key, d.platform) === selectedType);
   const deviceCaptures = spec ? design.captures[spec.key] : undefined;
   // With localizedCaptures a locale shows only its own captures: falling back to
   // another locale's would put the wrong language on screen.
@@ -260,7 +281,7 @@ function Loaded({ manifest, saved }: { manifest: StoreManifest; saved: SavedDesi
         device={device}
         locale={locale}
         dark={dark}
-        onPlatform={selectPlatform}
+        onDeviceType={selectDeviceType}
         onDevice={setDevice}
         onLocale={setLocale}
         onDark={setDark}
@@ -325,7 +346,7 @@ function Loaded({ manifest, saved }: { manifest: StoreManifest; saved: SavedDesi
               }
             />
           ) : (
-            <EmptyState {...ENABLE_PLATFORM[platform]} />
+            <EmptyState {...ENABLE_DEVICE_TYPE[selectedType]} />
           )}
         </main>
       </div>
