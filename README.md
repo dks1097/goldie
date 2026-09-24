@@ -76,6 +76,13 @@ into `out/raw/<device>/<locale>/`, and each locale's screenshots, preview and
 studio view use its own captures. It applies to iOS devices; Android emulators
 keep one shared capture.
 
+Flows tap by position, and an iPad lays the same screens out differently. A
+device replays its own copy of a flow when one exists under
+`.argent/flows/<device>/` (for example `.argent/flows/ipad-13/home.yaml`), and
+the shared flow otherwise. A preview can also name a `setup` flow, which runs
+once before the first segment without being recorded, to put the app in the
+state the story opens on.
+
 ## Google Play
 
 The `pixel-10-pro` device key renders Google Play phone screenshots

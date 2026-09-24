@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { captureLocales, capturesPerLocale, rawDirFor } from "./capture.ts";
-import { selectLocales } from "./config.ts";
+import { flowPath, selectLocales } from "./config.ts";
 
 const outDir = "/tmp/app/goldie/out";
 const locales = ["pt-PT", "en-US"];
@@ -40,5 +42,17 @@ describe("--locale", () => {
   test("rejects a locale outside the config, so it never becomes a path", () => {
     expect(() => selectLocales(locales, "en-us")).toThrow('Unknown locale "en-us"');
     expect(() => selectLocales(locales, "../../outside")).toThrow("Unknown locale");
+  });
+});
+
+describe("per-device flows", () => {
+  test("a device replays its own copy under flowsDir/<device>/, else the shared flow", () => {
+    const flowsDir = mkdtempSync(join(tmpdir(), "goldie-flows-"));
+    writeFileSync(join(flowsDir, "home.yaml"), "steps: []\n");
+    mkdirSync(join(flowsDir, "ipad-13"));
+    writeFileSync(join(flowsDir, "ipad-13", "home.yaml"), "steps: []\n");
+    expect(flowPath({ flowsDir }, "home", "ipad-13")).toBe(join(flowsDir, "ipad-13", "home.yaml"));
+    expect(flowPath({ flowsDir }, "home", "iphone-6.9")).toBe(join(flowsDir, "home.yaml"));
+    expect(flowPath({ flowsDir }, "home")).toBe(join(flowsDir, "home.yaml"));
   });
 });

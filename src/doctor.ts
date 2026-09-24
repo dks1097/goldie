@@ -168,28 +168,40 @@ export async function doctor(cfg: LoadedConfig): Promise<boolean> {
     fix: `Create ${cfg.flowsDir}   (or set flowsDir in goldie.config.ts)`,
   });
 
+  // Each device replays its own copy of a flow when it has one, so every
+  // device's resolution is checked; a flow shared by all is listed once.
+  const checked = new Set<string>();
   for (const scene of cfg.scenes) {
-    const flows = scene.kind === "preview" ? scene.segments.map((s) => s.flow) : [scene.flow];
+    const flows =
+      scene.kind === "preview"
+        ? [...(scene.setup ? [scene.setup] : []), ...scene.segments.map((s) => s.flow)]
+        : [scene.flow];
     for (const f of flows) {
-      const path = flowPath(cfg, f);
-      const exists = existsSync(path);
-      checks.push({
-        name: `flow ${f}`,
-        ok: exists,
-        detail: path,
-        fix: "Record or author it under the flows dir, or fix the name in goldie.config.ts",
-      });
-      // capture restarts the app before the first segment. A launch step inside
-      // a segment restarts it again mid-recording, filming the home screen and
-      // a cold start.
-      if (scene.kind === "preview" && exists && LAUNCH_STEP.test(readFileSync(path, "utf8"))) {
+      for (const key of cfg.devices) {
+        const path = flowPath(cfg, f, key);
+        if (checked.has(path)) continue;
+        checked.add(path);
+        const name = path === flowPath(cfg, f) ? f : `${key}/${f}`;
+        const exists = existsSync(path);
         checks.push({
-          name: `segment ${f}`,
-          ok: false,
-          warnOnly: true,
-          detail: "has a launch: step, which restarts the app on camera",
-          fix: "Drop the launch: step and state the starting screen in executionPrerequisite",
+          name: `flow ${name}`,
+          ok: exists,
+          detail: path,
+          fix: "Record or author it under the flows dir, or fix the name in goldie.config.ts",
         });
+        // capture restarts the app before the first segment. A launch step inside
+        // a segment restarts it again mid-recording, filming the home screen and
+        // a cold start. The setup flow runs before that restart, so it may launch.
+        const segment = scene.kind === "preview" && f !== scene.setup;
+        if (segment && exists && LAUNCH_STEP.test(readFileSync(path, "utf8"))) {
+          checks.push({
+            name: `segment ${name}`,
+            ok: false,
+            warnOnly: true,
+            detail: "has a launch: step, which restarts the app on camera",
+            fix: "Drop the launch: step and state the starting screen in executionPrerequisite",
+          });
+        }
       }
     }
   }
