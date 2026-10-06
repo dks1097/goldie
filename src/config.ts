@@ -480,12 +480,6 @@ export function validateLayouts(cfg: LoadedConfig): void {
 }
 
 /**
- * Puts the screenshot scenes in the saved order. Ids missing from the order
- * (scenes added to the config since) keep their config position relative to
- * each other and follow the ordered ones; unknown ids are ignored. Other
- * scenes (the preview) stay where they are.
- */
-/**
  * The locales a command runs for: all of the config's, or the one --locale
  * asks for. A locale names output and capture directories, so a value outside
  * the config (a typo, or a path like "../x") is rejected rather than joined
@@ -499,6 +493,12 @@ export function selectLocales(locales: string[], requested?: string): string[] {
   return [requested];
 }
 
+/**
+ * Puts the screenshot scenes in the saved order. Ids missing from the order
+ * (scenes added to the config since) keep their config position relative to
+ * each other and follow the ordered ones; unknown ids are ignored. Other
+ * scenes (the preview) stay where they are.
+ */
 export function reorderScenes(scenes: Scene[], order: string[]): Scene[] {
   const shots = scenes.filter(isScreenshot);
   const rank = new Map(order.map((id, i) => [id, i]));
