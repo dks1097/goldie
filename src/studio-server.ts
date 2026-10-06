@@ -24,6 +24,10 @@ import { zipDirs } from "./zip.ts";
  * per-scene layouts ride on goldie.design.json, which the CLI reads on its
  * own. The response ends with "[done]" on success or "[failed]" otherwise; on
  * "[done]" the UI downloads GET /api/export/download.
+ *
+ * POST /api/remove - `goldie remove <id>`: deletes a scene (or the preview)
+ * from the config, its captures, renders and the design. Body: { id }. Plain
+ * text log; 200 on success, 500 with the log otherwise.
  */
 
 export type StudioPaths = {
@@ -118,6 +122,56 @@ export function designHandler({ paths }: StudioApi): Handler {
       }
     });
   };
+}
+
+/** Handles /api/remove. */
+export function removeHandler({ paths, cli }: StudioApi): Handler {
+  return (req, res) => {
+    if (req.method !== "POST") {
+      res.statusCode = 405;
+      res.end("POST only");
+      return;
+    }
+    readBody(req).then(async (body) => {
+      let id: unknown;
+      try {
+        id = JSON.parse(body || "{}").id;
+      } catch {}
+      if (typeof id !== "string" || !/^[\w.-]+$/.test(id)) {
+        res.statusCode = 400;
+        res.end("Body must be { id } with a scene id.");
+        return;
+      }
+      const [bin, ...prefix] = cli;
+      const log: string[] = [];
+      try {
+        await run(bin!, [...prefix, "remove", id], paths.configDir, log, {
+          GOLDIE_CONFIG: paths.configPath,
+        });
+        res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+      } catch {
+        res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+      }
+      res.end(log.join(""));
+    });
+  };
+}
+
+/** Runs a command to completion, collecting its output. */
+function run(
+  cmd: string,
+  args: string[],
+  cwd: string,
+  log: string[],
+  env: Record<string, string> = {},
+): Promise<void> {
+  return new Promise((done, fail) => {
+    const child = spawn(cmd, args, { cwd, env: { ...process.env, ...env } });
+    child.stdout.on("data", (d) => log.push(String(d)));
+    child.stderr.on("data", (d) => log.push(String(d)));
+    child.on("error", fail);
+    child.on("close", (code) => (code === 0 ? done() : fail(new Error(`exit code ${code}`))));
+  });
 }
 
 /** Handles /api/export and /api/export/download. `sub` is the path after /api/export. */
@@ -285,11 +339,13 @@ export function serveStudio(api: StudioApi, port = 4321): Promise<string> {
   }
   const design = designHandler(api);
   const exp = exportHandler(api);
+  const remove = removeHandler(api);
 
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const path = url.pathname;
     if (path === "/api/design") return design(req, res);
+    if (path === "/api/remove") return remove(req, res);
     if (path.startsWith("/api/export")) return exp(path.slice("/api/export".length))(req, res);
 
     const file = fileIn(api.paths.webDir, path) ?? fileIn(STUDIO_DIST, path);

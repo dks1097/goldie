@@ -1,31 +1,25 @@
 import { DownloadIcon, Loader2Icon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { CUSTOM_TEMPLATE } from "../App";
 
 /**
  * The one place the goldie CLI runs: Export re-renders the screenshots and
  * the preview video from the raw captures with the current design, zips them,
- * and hands the browser the zip. Streams the CLI log while it runs (the video
+ * and hands the browser the zip. The strip choices (template, layouts, copy,
+ * hidden screens) reach the CLI through the saved goldie.design.json, which
+ * holds each device's own design too; only the shared look rides as flags. Streams the CLI log while it runs (the video
  * render takes a while). Served by `goldie studio` and the Vite dev server alike (src/studio-server.ts).
  */
 export function ExportPanel({
   background,
   frames,
   font,
-  template,
-  layout,
-  screenOnly,
 }: {
   background: string;
   /** Bezel variant per device key; empty values mean the config's custom art. */
   frames: Record<string, string>;
   /** A --font key, or undefined to keep the config's font. */
   font: string | undefined;
-  /** A built-in template key, "" for none, or the custom sentinel (left to the sidecar/config). */
-  template: string;
-  layout: string;
-  screenOnly: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<string | null>(null);
@@ -49,9 +43,6 @@ export function ExportPanel({
           background,
           frames,
           font,
-          template: template === CUSTOM_TEMPLATE ? undefined : template || "none",
-          layout,
-          screenOnly,
         }),
       });
       if (!res.ok || !res.body) {

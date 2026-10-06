@@ -1,9 +1,9 @@
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, EyeIcon, EyeOffIcon, Trash2Icon, X } from "lucide-react";
 import { AnimatePresence, Reorder } from "motion/react";
 import type React from "react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { FRAMES, type FrameGeometry } from "../../../src/frame";
+import { FRAMES, type FrameGeometry, SCREEN_BLEED } from "../../../src/frame";
 import {
   BADGE,
   type Composition,
@@ -106,6 +106,9 @@ export function Strip({
   screenOnly,
   sceneLayouts,
   onSceneLayout,
+  hidden,
+  onHide,
+  onDelete,
   view,
 }: {
   design: Design;
@@ -127,14 +130,22 @@ export function Strip({
   screenOnly: boolean;
   sceneLayouts: Record<string, string>;
   onSceneLayout: (sceneId: string, key: string | undefined) => void;
+  /** Scene ids (screenshots, or the preview) this strip leaves out. */
+  hidden: string[];
+  onHide: (sceneId: string, hide: boolean) => void;
+  /** Deletes the scene (or the preview) from every device, config included. */
+  onDelete: (sceneId: string) => Promise<void>;
   view: StripView;
 }) {
   const theme = design.theme;
   const frameGeometry = FRAMES[tileSpec.key as keyof typeof FRAMES] ?? FRAMES["iphone-6.9"];
+  // Hidden scenes leave the strip (and the template's rhythm) entirely; the
+  // row under the strip brings them back.
+  const shown = design.scenes.filter((s) => !hidden.includes(s.id));
   const scenes =
-    order.length > 0
-      ? [...design.scenes].sort((a, b) => rankOf(order, a.id) - rankOf(order, b.id))
-      : design.scenes;
+    order.length > 0 ? [...shown].sort((a, b) => rankOf(order, a.id) - rankOf(order, b.id)) : shown;
+  const previewId = design.preview?.sceneId;
+  const previewHidden = previewId !== undefined && hidden.includes(previewId);
   // The same resolution the CLI runs, on the scenes in their displayed order.
   const resolved = resolveScenes(scenes, {
     template: Array.isArray(template)
@@ -184,7 +195,7 @@ export function Strip({
   });
 
   const segments =
-    design.preview && captures.clips
+    design.preview && captures.clips && !previewHidden
       ? design.preview.segments.flatMap((seg) => {
           const clip = captures.clips!.find((c) => c.segmentId === seg.id);
           return clip ? [{ url: clip.url, durationSeconds: clip.durationSeconds }] : [];
@@ -212,6 +223,10 @@ export function Strip({
     sceneId?: string;
     /** Past Apple's per-device screenshot cap; still shown, dimmed. */
     overLimit?: boolean;
+    /** Leaves the scene (or the preview) out of this strip. */
+    hide?: () => void;
+    /** Deletes the scene (or the preview) everywhere. */
+    remove?: () => Promise<void>;
     /** The lightbox's per-scene layout override control (screenshots only). */
     layout?: {
       value: string | undefined;
@@ -232,6 +247,8 @@ export function Strip({
       bad: outOfBounds,
       badReason: "Clips sum outside the 15-30s Apple allows for previews.",
       editable: false,
+      hide: previewId ? () => onHide(previewId, true) : undefined,
+      remove: previewId ? () => onDelete(previewId) : undefined,
       scene: () => <PreviewScene segments={segments} />,
     });
   }
@@ -257,6 +274,8 @@ export function Strip({
         editable: true,
         // Only the first slice drags; the second follows it.
         sceneId: slice === 0 ? scene.id : undefined,
+        hide: () => onHide(scene.id, true),
+        remove: () => onDelete(scene.id),
         layout: layoutControl,
         scene: (editable) => (
           <ScreenshotScene
@@ -373,7 +392,38 @@ export function Strip({
     }
   }, [open, entries.length]);
 
-  if (entries.length === 0) return null;
+  // Screens this strip leaves out, by their headline, to bring back.
+  const hiddenScenes = [
+    ...(previewHidden && previewId ? [{ id: previewId, label: "Preview video" }] : []),
+    ...design.scenes
+      .filter((s) => hidden.includes(s.id))
+      .map((s) => ({
+        id: s.id,
+        label: copy[s.id]?.headline?.[locale] ?? s.headline[locale] ?? s.id,
+      })),
+  ];
+  const hiddenRow =
+    hiddenScenes.length > 0 ? (
+      <div className="flex flex-wrap items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
+        <span>Hidden:</span>
+        {hiddenScenes.map((s) => (
+          <Button
+            key={s.id}
+            type="button"
+            variant="outline"
+            size="xs"
+            className="rounded-full text-[11px]"
+            onClick={() => onHide(s.id, false)}
+            title="Show it in this strip again"
+          >
+            <EyeIcon />
+            {s.label}
+          </Button>
+        ))}
+      </div>
+    ) : null;
+
+  if (entries.length === 0) return hiddenRow;
 
   const pastLimit = entries.filter((e) => e.overLimit).length;
   // Scenes without a capture stay in place; captured ones take the new
@@ -509,6 +559,8 @@ export function Strip({
         </div>
       )}
 
+      {hiddenRow}
+
       {pastLimit > 0 ? (
         <p className="text-center text-[11px] font-medium text-destructive">
           The App Store allows {MAX_SCREENSHOTS} screenshots; {pastLimit} sit past that limit.
@@ -554,6 +606,8 @@ function Lightbox({
     height: number;
     editable: boolean;
     scene: (editable: boolean) => ReactNode;
+    hide?: () => void;
+    remove?: () => Promise<void>;
     layout?: {
       value: string | undefined;
       /** The layout the scene gets with no override: the template's pick, or the theme layout. */
@@ -622,6 +676,22 @@ function Lightbox({
             />
           </div>
         ) : null}
+        {entry.hide ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="dark gap-1.5 text-foreground"
+            onClick={() => {
+              entry.hide?.();
+              onClose();
+            }}
+          >
+            <EyeOffIcon />
+            Hide from this strip
+          </Button>
+        ) : null}
+        {entry.remove ? <DeleteButton remove={entry.remove} /> : null}
       </div>
 
       <Button
@@ -653,6 +723,41 @@ function Lightbox({
         </>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Deletes the scene everywhere, after a second click: the first one turns the
+ * button into an explicit confirmation, which reverts on its own.
+ */
+function DeleteButton({ remove }: { remove: () => Promise<void> }) {
+  const [state, setState] = useState<"idle" | "confirm" | "busy">("idle");
+  useEffect(() => {
+    if (state !== "confirm") return;
+    const timer = setTimeout(() => setState("idle"), 4000);
+    return () => clearTimeout(timer);
+  }, [state]);
+  return (
+    <Button
+      type="button"
+      variant={state === "idle" ? "outline" : "destructive"}
+      size="sm"
+      className={state === "idle" ? "dark gap-1.5 text-foreground" : "dark gap-1.5"}
+      disabled={state === "busy"}
+      title="Removes it from the config, its captures and exports, on every device"
+      onClick={() => {
+        if (state === "idle") return setState("confirm");
+        setState("busy");
+        remove().finally(() => setState("idle"));
+      }}
+    >
+      <Trash2Icon />
+      {state === "idle"
+        ? "Delete"
+        : state === "confirm"
+          ? "Delete from every device?"
+          : "Deleting…"}
+    </Button>
   );
 }
 
@@ -891,6 +996,7 @@ function DeviceView({
   const { frame, screen } = device;
   // The screen as fractions of the device box, so it rotates with it.
   const pct = (v: number, of: number) => `${(v / of) * 100}%`;
+  const bleed = screen.width * SCREEN_BLEED;
   return (
     <div
       style={{
@@ -902,6 +1008,20 @@ function DeviceView({
         transform: device.rotate ? `rotate(${device.rotate}deg)` : undefined,
       }}
     >
+      {frameUrl ? (
+        // Black under the bezel's antialiased inner edge, so no background shows through.
+        <div
+          style={{
+            position: "absolute",
+            left: pct(screen.left - frame.left - bleed, frame.width),
+            top: pct(screen.top - frame.top - bleed, frame.height),
+            width: pct(screen.width + bleed * 2, frame.width),
+            height: pct(screen.height + bleed * 2, frame.height),
+            borderRadius: w(screen.radius + bleed),
+            background: "#000",
+          }}
+        />
+      ) : null}
       <div
         style={{
           position: "absolute",

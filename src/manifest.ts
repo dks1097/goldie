@@ -13,6 +13,7 @@ import {
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { type CaptureManifest, capturesPerLocale, rawDirFor } from "./capture.ts";
 import {
+  configForDevice,
   type Decoration,
   deviceFrame,
   FRAME_VARIANTS,
@@ -349,10 +350,11 @@ async function readCaptureManifest(
 }
 
 async function collect(
-  cfg: LoadedConfig,
+  config: LoadedConfig,
   deviceKey: DeviceKey,
   locale: string,
 ): Promise<LocaleAssets> {
+  const cfg = configForDevice(config, deviceKey);
   const shotDir = join(cfg.outDir, "screenshots", deviceKey, locale);
   const previewDir = join(cfg.outDir, "previews", deviceKey, locale);
   const sceneOrder = cfg.scenes.filter(isScreenshot).map((s) => s.id);

@@ -67,6 +67,7 @@ export function Sidebar({
   onTemplate,
   onLayout,
   onScreenOnly,
+  stripScope,
 }: {
   manifest: StoreManifest;
   deviceType: DeviceType;
@@ -94,6 +95,8 @@ export function Sidebar({
   onTemplate: (v: string) => void;
   onLayout: (v: string) => void;
   onScreenOnly: (v: boolean) => void;
+  /** Whether the device on show has a strip design of its own; see DesignPanel. */
+  stripScope?: { own: boolean; onChange: (own: boolean) => void };
 }) {
   const typeDevices = manifest.devices.filter((d) => d.type === deviceType);
   return (
@@ -195,6 +198,12 @@ export function Sidebar({
           onTemplate={onTemplate}
           onLayout={onLayout}
           onScreenOnly={onScreenOnly}
+          stripScope={
+            stripScope && {
+              ...stripScope,
+              deviceLabel: DEVICE_TYPES.find((t) => t.key === deviceType)!.label,
+            }
+          }
         />
       </div>
 
@@ -203,9 +212,6 @@ export function Sidebar({
           background={background}
           frames={frames}
           font={fontKey(manifest.design, fontFamily)}
-          template={template}
-          layout={layout}
-          screenOnly={screenOnly}
         />
       </footer>
     </aside>

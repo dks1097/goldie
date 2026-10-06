@@ -2,6 +2,7 @@ import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import * as argent from "./argent.ts";
 import {
+  configForDevice,
   flowPath,
   isPreview,
   isScreenshot,
@@ -76,10 +77,23 @@ export type CaptureManifest = {
 };
 
 export async function capture(
-  cfg: LoadedConfig,
+  config: LoadedConfig,
   deviceKey: DeviceKey,
-  locale: string = cfg.locales[0]!,
+  locale: string = config.locales[0]!,
 ): Promise<CaptureManifest> {
+  // The scenes this device's design shows; a hidden one is not captured either,
+  // unless a visible two-screen layout lends it its second screen.
+  const view = configForDevice(config, deviceKey);
+  // Flows can share app state (a signed-in session, a booking one scene makes
+  // and the next one shows), so they replay in the order the config lists
+  // them; the order arranged in the studio only lays out the strip.
+  const configOrder = (config.stripBase?.scenes ?? config.scenes).map((s) => s.id);
+  const cfg: LoadedConfig = {
+    ...view,
+    scenes: [...view.scenes, ...(view.lentScenes ?? [])].sort(
+      (a, b) => configOrder.indexOf(a.id) - configOrder.indexOf(b.id),
+    ),
+  };
   const spec = DEVICES[deviceKey];
   const udid = await device.resolveUdid(deviceKey);
   const rawDir = rawDirFor(cfg, deviceKey, locale);

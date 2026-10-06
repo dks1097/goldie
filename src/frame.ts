@@ -58,5 +58,13 @@ export const FRAMES: Record<DeviceKey, FrameGeometry> = {
   "pixel-10-pro": ANDROID_FRAME.geom,
 };
 
+/**
+ * How far past the screen cutout a black underlay reaches under the bezel, as
+ * a fraction of the screen width. The bezel art's inner edge is antialiased
+ * (a pixel or two of low alpha), and with nothing under it the background
+ * shows through as a thin light line, worst on rotated devices.
+ */
+export const SCREEN_BLEED = 0.004;
+
 /** The iPhone geometry, which compose() uses when no device is given. */
 export const FRAME = FRAMES["iphone-6.9"];

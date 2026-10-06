@@ -123,6 +123,7 @@ scene list repeats. Built-ins:
 | `showcase` | hero, tilt, duo, tilt-right, minimal |
 | `magazine` | offset, copy-below, tilt-right, hero, minimal |
 | `storyboard` | panorama-duo, copy-below, hero, minimal, tilt |
+| `storyboard-upright` | panorama-duo-upright, copy-below, hero, minimal, tilt |
 | `dynamic` | tilt, duo-tilt, panorama, minimal, tilt-right |
 
 Precedence per scene: `scenes[].layout`, then the template's entry, then

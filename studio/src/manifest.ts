@@ -163,13 +163,19 @@ export async function loadManifest(): Promise<StoreManifest> {
 }
 
 /** The design choices saved on disk next to the config; see src/studio-server.ts. */
-export type SavedDesign = {
+export type SavedDesign = SavedStrip & {
   background?: string;
   /** One variant for the device it is drawn for; written by older studios. */
   frame?: string;
   /** A bezel variant per device key. */
   frames?: Record<string, string>;
   fontFamily?: string;
+  /** Devices switched to a strip design of their own; the look above stays shared. */
+  devices?: Record<string, SavedStrip>;
+};
+
+/** What a strip shows and says: the shared design's, or a device's own. */
+export type SavedStrip = {
   /** Copy edited in the lightbox, per screenshot scene id, then locale. */
   copy?: Record<string, SceneCopy>;
   /** Screenshot scene ids in the order the tiles were dragged into. */
@@ -181,6 +187,8 @@ export type SavedDesign = {
   screenOnly?: boolean;
   /** Layout overrides per screenshot scene id. */
   sceneLayouts?: Record<string, string>;
+  /** Scene ids (screenshots, or the preview) left out of this strip. */
+  hidden?: string[];
 };
 
 export type SceneCopy = {
@@ -197,6 +205,20 @@ export async function loadDesign(): Promise<SavedDesign> {
   } catch {
     return {}; // a static build has no API; the config's values stand
   }
+}
+
+/**
+ * Deletes a scene (or the preview) everywhere: `goldie remove <id>` edits the
+ * config and drops its captures, renders and design entries. Throws with the
+ * CLI's log on failure.
+ */
+export async function removeScene(id: string): Promise<void> {
+  const res = await fetch("/api/remove", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id }),
+  });
+  if (!res.ok) throw new Error(`Deleting "${id}" failed: ${await res.text()}`);
 }
 
 export async function saveDesign(design: SavedDesign): Promise<void> {
