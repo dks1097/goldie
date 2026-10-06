@@ -17,7 +17,9 @@ import {
   loadDesign,
   loadManifest,
   ManifestError,
+  removeScene,
   type SavedDesign,
+  type SavedStrip,
   type SceneCopy,
   type StoreManifest,
   saveDesign,
@@ -55,6 +57,13 @@ const ENABLE_DEVICE_TYPE: Record<
     body: "Ask your coding agent to set them up:",
     command: "create Google Play screenshots using goldie",
   },
+};
+
+/** The rail row's name, for the "<device> only" design switch. */
+const TYPE_LABEL: Record<DeviceType, string> = {
+  iphone: "iPhone",
+  ipad: "iPad",
+  android: "Android",
 };
 
 /** How long the design must sit still before it is written to disk. */
@@ -142,54 +151,91 @@ function Loaded({ manifest, saved }: { manifest: StoreManifest; saved: SavedDesi
     background: saved.background ?? design.theme.background,
     frames: initialFrames(design, saved),
     fontFamily: saved.fontFamily ?? design.theme.fontFamily,
-    copy: saved.copy ?? {},
-    layout: knownLayout(saved.layout) ?? design.layout,
-    template: initialTemplate(design, saved),
-    screenOnly: saved.screenOnly ?? design.screenOnly,
-    sceneLayouts: initialSceneLayouts(design, saved, knownLayout),
-    order: initialOrder(design, saved),
+    ...initialStrip(design, saved, knownLayout),
+    devices: Object.fromEntries(
+      Object.entries(saved.devices ?? {})
+        .filter(([key]) => manifest.devices.some((d) => d.key === key))
+        .map(([key, strip]) => [key, initialStrip(design, strip, knownLayout)]),
+    ),
   }));
-  const {
-    background,
-    frames,
-    fontFamily,
-    copy,
-    layout,
-    template,
-    screenOnly,
-    sceneLayouts,
-    order,
-  } = state;
+  const { background, frames, fontFamily, devices } = state;
+  // A device switched to a design of its own edits that one; every other
+  // device shows (and edits) the shared strip.
+  const ownDesign = devices[device];
+  const strip: StripState = ownDesign ?? state;
+  const { copy, layout, template, screenOnly, sceneLayouts, order, hidden } = strip;
   // Each setter names its field so a burst of edits to one control (a drag
   // on the gradient picker) collapses into a single undo step.
   const field =
     <K extends keyof DesignState>(key: K) =>
     (value: DesignState[K]) =>
       set(key, (prev) => ({ ...prev, [key]: value }));
+  // Strip edits land in the device's own design when it has one.
+  const setStrip = (label: string, update: (prev: StripState) => Partial<StripState>) =>
+    set(ownDesign ? `${device}:${label}` : label, (prev) => {
+      const own = prev.devices[device];
+      if (!own) return { ...prev, ...update(prev) };
+      return { ...prev, devices: { ...prev.devices, [device]: { ...own, ...update(own) } } };
+    });
+  const stripField =
+    <K extends keyof StripState>(key: K) =>
+    (value: StripState[K]) =>
+      setStrip(key, () => ({ [key]: value }));
+  // Switching on starts the device from a copy of the shared strip; switching
+  // off drops its own design (undo brings it back).
+  const setOwnDesign = (on: boolean) =>
+    set(`own:${device}`, (prev) => {
+      const next = { ...prev.devices };
+      // The config's per-scene layouts become the copy's own overrides, so
+      // the strip looks the same until the device picks another template.
+      if (on) next[device] = { ...pickStrip(prev), sceneLayouts: effectiveLayouts(prev) };
+      else delete next[device];
+      return { ...prev, devices: next };
+    });
+  const effectiveLayouts = (s: StripState): Record<string, string> => ({
+    ...Object.fromEntries(design.scenes.flatMap((sc) => (sc.layout ? [[sc.id, sc.layout]] : []))),
+    ...s.sceneLayouts,
+  });
+  // A device's own design leaves the config's per-scene layouts behind (they
+  // were copied into its overrides), so its template reaches every scene.
+  const stripDesign = ownDesign
+    ? { ...design, scenes: design.scenes.map((sc) => ({ ...sc, layout: undefined })) }
+    : design;
+  // Deleting rewrites the config, so the studio reloads onto the new manifest.
+  const deleteScene = (sceneId: string) =>
+    removeScene(sceneId).then(
+      () => window.location.reload(),
+      (e: Error) => setSaveError(e.message),
+    );
+  const setHidden = (sceneId: string, hide: boolean) =>
+    setStrip("hidden", (prev) => ({
+      hidden: hide
+        ? [...prev.hidden.filter((id) => id !== sceneId), sceneId]
+        : prev.hidden.filter((id) => id !== sceneId),
+    }));
   const setBackground = field("background");
   // The frame picker edits the variant of the device on show; "" means custom art.
   const frame = frames[device] ?? "";
   const setFrame = (value: string) =>
     set(`frame:${device}`, (prev) => ({ ...prev, frames: { ...prev.frames, [device]: value } }));
   const setFontFamily = field("fontFamily");
-  const setLayout = field("layout");
+  const setLayout = stripField("layout");
   // Picking a template replaces the strip's layout sequence, so any per-scene
   // overrides made against the previous one are dropped with it.
   const setTemplate = (value: string) =>
-    set("template", (prev) => ({ ...prev, template: value, sceneLayouts: {} }));
-  const setScreenOnly = field("screenOnly");
-  const setOrder = field("order");
+    setStrip("template", () => ({ template: value, sceneLayouts: {} }));
+  const setScreenOnly = stripField("screenOnly");
+  const setOrder = stripField("order");
   // Per-scene layout overrides; a scene absent there follows the default above.
   const setSceneLayout = (sceneId: string, key: string | undefined) =>
-    set("sceneLayouts", (prev) => {
+    setStrip("sceneLayouts", (prev) => {
       const next = { ...prev.sceneLayouts };
       if (key) next[sceneId] = key;
       else delete next[sceneId];
-      return { ...prev, sceneLayouts: next };
+      return { sceneLayouts: next };
     });
   const setSceneCopy = (sceneId: string, fieldName: "headline" | "subhead", text: string) =>
-    set(`copy:${sceneId}:${fieldName}`, (prev) => ({
-      ...prev,
+    setStrip(`copy:${sceneId}:${fieldName}`, (prev) => ({
       copy: {
         ...prev.copy,
         [sceneId]: {
@@ -216,23 +262,23 @@ function Loaded({ manifest, saved }: { manifest: StoreManifest; saved: SavedDesi
     }
     const timer = setTimeout(() => {
       const chosen = Object.fromEntries(Object.entries(frames).filter(([, v]) => v));
+      const own = Object.entries(state.devices);
       saveDesign({
-        background,
+        background: state.background,
         frames: Object.keys(chosen).length > 0 ? chosen : undefined,
-        fontFamily,
-        copy: Object.keys(copy).length > 0 ? copy : undefined,
-        order: order.length > 0 ? order : undefined,
-        template: template === CUSTOM_TEMPLATE ? undefined : template,
-        layout,
-        screenOnly,
-        sceneLayouts: Object.keys(sceneLayouts).length > 0 ? sceneLayouts : undefined,
+        fontFamily: state.fontFamily,
+        ...savedStrip(state),
+        devices:
+          own.length > 0
+            ? Object.fromEntries(own.map(([key, s]) => [key, savedStrip(s)]))
+            : undefined,
       }).then(
         () => setSaveError(null),
         (e: Error) => setSaveError(e.message),
       );
     }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [background, frames, fontFamily, copy, order, template, layout, screenOnly, sceneLayouts]);
+  }, [state, frames]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
@@ -300,6 +346,15 @@ function Loaded({ manifest, saved }: { manifest: StoreManifest; saved: SavedDesi
         onTemplate={setTemplate}
         onLayout={setLayout}
         onScreenOnly={setScreenOnly}
+        stripScope={
+          spec && manifest.devices.length > 1
+            ? {
+                own: Boolean(ownDesign),
+                deviceLabel: TYPE_LABEL[selectedType],
+                onChange: setOwnDesign,
+              }
+            : undefined
+        }
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -307,7 +362,7 @@ function Loaded({ manifest, saved }: { manifest: StoreManifest; saved: SavedDesi
           {spec && captures ? (
             <div className="w-full max-w-[1400px]">
               <Strip
-                design={design}
+                design={stripDesign}
                 captures={captures}
                 spec={spec}
                 locale={locale}
@@ -327,6 +382,9 @@ function Loaded({ manifest, saved }: { manifest: StoreManifest; saved: SavedDesi
                 screenOnly={screenOnly}
                 sceneLayouts={sceneLayouts}
                 onSceneLayout={setSceneLayout}
+                hidden={hidden}
+                onHide={setHidden}
+                onDelete={deleteScene}
                 view={stripView}
               />
             </div>
@@ -357,11 +415,17 @@ function Loaded({ manifest, saved }: { manifest: StoreManifest; saved: SavedDesi
 }
 
 /** Everything the undo stack tracks: the design choices saved to goldie.design.json. */
-type DesignState = {
+type DesignState = StripState & {
   background: string;
   /** Bezel variant per device key; "" or absent means the config's custom art. */
   frames: Record<string, string>;
   fontFamily: string;
+  /** Devices switched to a strip design of their own, by device key. */
+  devices: Record<string, StripState>;
+};
+
+/** What a strip shows and says: the shared design's, or a device's own. */
+type StripState = {
   copy: Record<string, SceneCopy>;
   layout: string;
   /** A built-in template key, "" for none, or CUSTOM_TEMPLATE for the config's own sequence. */
@@ -371,7 +435,54 @@ type DesignState = {
   sceneLayouts: Record<string, string>;
   /** Screenshot scene ids as arranged by dragging tiles; empty means the config's order. */
   order: string[];
+  /** Scene ids (screenshots, or the preview) left out of the strip. */
+  hidden: string[];
 };
+
+function pickStrip(s: StripState): StripState {
+  return {
+    copy: s.copy,
+    layout: s.layout,
+    template: s.template,
+    screenOnly: s.screenOnly,
+    sceneLayouts: s.sceneLayouts,
+    order: s.order,
+    hidden: s.hidden,
+  };
+}
+
+function initialStrip(
+  design: Design,
+  saved: SavedStrip,
+  knownLayout: (key: string | undefined) => string | undefined,
+): StripState {
+  const ids = [
+    ...design.scenes.map((s) => s.id),
+    ...(design.preview ? [design.preview.sceneId] : []),
+  ];
+  return {
+    copy: saved.copy ?? {},
+    layout: knownLayout(saved.layout) ?? design.layout,
+    template: initialTemplate(design, saved),
+    screenOnly: saved.screenOnly ?? design.screenOnly,
+    sceneLayouts: initialSceneLayouts(design, saved, knownLayout),
+    order: initialOrder(design, saved),
+    hidden: (saved.hidden ?? []).filter((id) => ids.includes(id)),
+  };
+}
+
+/** A strip as goldie.design.json stores it: empty fields left out. */
+function savedStrip(s: StripState): SavedStrip {
+  return {
+    copy: Object.keys(s.copy).length > 0 ? s.copy : undefined,
+    order: s.order.length > 0 ? s.order : undefined,
+    template: s.template === CUSTOM_TEMPLATE ? undefined : s.template,
+    layout: s.layout,
+    screenOnly: s.screenOnly,
+    sceneLayouts: Object.keys(s.sceneLayouts).length > 0 ? s.sceneLayouts : undefined,
+    hidden: s.hidden.length > 0 ? s.hidden : undefined,
+  };
+}
 
 /** The saved variant per device when it is drawn for that device, else the config's. */
 function initialFrames(design: Design, saved: SavedDesign): Record<string, string> {
@@ -390,7 +501,7 @@ function initialFrames(design: Design, saved: SavedDesign): Record<string, strin
   return out;
 }
 
-function initialTemplate(design: Design, saved: SavedDesign): string {
+function initialTemplate(design: Design, saved: SavedStrip): string {
   if (saved.template !== undefined && design.templates.some((t) => t.key === saved.template))
     return saved.template;
   if (saved.template === "") return "";
@@ -400,7 +511,7 @@ function initialTemplate(design: Design, saved: SavedDesign): string {
 
 function initialSceneLayouts(
   design: Design,
-  saved: SavedDesign,
+  saved: SavedStrip,
   knownLayout: (key: string | undefined) => string | undefined,
 ): Record<string, string> {
   const out: Record<string, string> = {};
@@ -412,7 +523,7 @@ function initialSceneLayouts(
 }
 
 /** Ids no longer in the config are dropped, new ones follow the saved order. */
-function initialOrder(design: Design, saved: SavedDesign): string[] {
+function initialOrder(design: Design, saved: SavedStrip): string[] {
   const ids = design.scenes.map((s) => s.id);
   if (!saved.order) return [];
   const kept = saved.order.filter((id) => ids.includes(id));

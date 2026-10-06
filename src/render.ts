@@ -10,6 +10,7 @@ import {
 } from "@napi-rs/canvas";
 import { type CaptureManifest, capturesPerLocale, rawDirFor } from "./capture.ts";
 import {
+  configForDevice,
   type Decoration,
   deviceFrame,
   isPreview,
@@ -19,8 +20,16 @@ import {
 } from "./config.ts";
 import { execOrThrow } from "./exec.ts";
 import { registerFonts, withGlyphFallback } from "./fonts.ts";
+import { SCREEN_BLEED } from "./frame.ts";
 import { pngInfo } from "./image.ts";
-import { BADGE, type Composition, compose, SCREEN_SHADOW, TYPE } from "./layouts.ts";
+import {
+  BADGE,
+  type Composition,
+  compose,
+  needsSecondCapture,
+  SCREEN_SHADOW,
+  TYPE,
+} from "./layouts.ts";
 import { DEVICES, type DeviceKey, PREVIEW, SCREENSHOT_PIXEL_FORMAT } from "./specs.ts";
 
 async function readManifest(
@@ -47,7 +56,12 @@ async function readManifest(
  * panorama layout draws once at span × width and is sliced into store-sized
  * tiles.
  */
-export async function renderScreenshots(cfg: LoadedConfig, deviceKey: DeviceKey, locale: string) {
+export async function renderScreenshots(
+  config: LoadedConfig,
+  deviceKey: DeviceKey,
+  locale: string,
+) {
+  const cfg = configForDevice(config, deviceKey);
   const spec = DEVICES[deviceKey];
   const manifest = await readManifest(cfg, deviceKey, locale);
   // Releases before 0.3 keyed this dir by spec.label; a stale label dir
@@ -76,9 +90,24 @@ export async function renderScreenshots(cfg: LoadedConfig, deviceKey: DeviceKey,
     return shot;
   };
 
+  // A scene with no capture yet (added to the config, not captured on this
+  // device or locale) is skipped with a note, as the studio leaves it out of
+  // the strip, rather than failing the whole export.
+  const captured = (id: string | undefined) =>
+    id !== undefined && manifest.screenshots.some((s) => s.sceneId === id);
+  const ready = resolvedScenes(cfg).filter((r) => {
+    const needed = [r.scene.id, ...(needsSecondCapture(r.layout) ? [r.secondScene] : [])];
+    const missing = needed.filter((id) => !captured(id));
+    if (missing.length === 0) return true;
+    console.log(
+      `  skip  ${r.scene.id}: no ${deviceKey} ${locale} capture of ${missing.join(", ")} (run goldie capture)`,
+    );
+    return false;
+  });
+
   // Output numbers count tiles, so a panorama takes two consecutive slots.
   let slot = 0;
-  const jobs = resolvedScenes(cfg).map((r) => {
+  const jobs = ready.map((r) => {
     const first = slot;
     slot += r.layout.span;
     return { ...r, first };
@@ -240,6 +269,20 @@ function drawDevice(
     ctx.roundRect(screen.left, screen.top, screen.width, screen.height, screen.radius);
     ctx.fill();
     ctx.restore();
+  }
+  if (bezel) {
+    // Black under the bezel's antialiased inner edge, so no background shows through.
+    const bleed = screen.width * SCREEN_BLEED;
+    ctx.fillStyle = "#000";
+    ctx.beginPath();
+    ctx.roundRect(
+      screen.left - bleed,
+      screen.top - bleed,
+      screen.width + bleed * 2,
+      screen.height + bleed * 2,
+      screen.radius + bleed,
+    );
+    ctx.fill();
   }
   ctx.save();
   ctx.beginPath();
@@ -479,7 +522,8 @@ function splitTopLevel(s: string): string[] {
  * which Apple requires even when it is silent. The android video follows the
  * same shape, destined for the YouTube promo link the user posts themselves.
  */
-export async function renderPreview(cfg: LoadedConfig, deviceKey: DeviceKey, locale: string) {
+export async function renderPreview(config: LoadedConfig, deviceKey: DeviceKey, locale: string) {
+  const cfg = configForDevice(config, deviceKey);
   const spec = DEVICES[deviceKey];
   const scene = cfg.scenes.find(isPreview);
   if (!scene) return null;
@@ -570,10 +614,11 @@ function pick(map: Record<string, string>, locale: string, sceneId: string, fiel
 
 /** Compares finished assets against the Apple spec table and prints a report. */
 export async function verify(
-  cfg: LoadedConfig,
+  config: LoadedConfig,
   deviceKey: DeviceKey,
   locale: string,
 ): Promise<boolean> {
+  const cfg = configForDevice(config, deviceKey);
   const spec = DEVICES[deviceKey];
   let ok = true;
 

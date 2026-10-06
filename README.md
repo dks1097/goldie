@@ -125,7 +125,7 @@ renders the same result. The config also takes:
 - `theme.template`: `editorial`, `showcase`, `magazine`, `storyboard`,
   `dynamic`, or your own layout sequence from `classic`, `copy-below`, `hero`,
   `offset`, `tilt`, `tilt-right`, `duo`, `duo-tilt`, `panorama`,
-  `panorama-duo`, `minimal`.
+  `panorama-duo`, `panorama-duo-upright`, `minimal`.
 - `theme.fontFamily`: a CSS font stack. Merriweather, DM Mono, Lato, DM Sans,
   Montserrat, Noto Sans SC (Simplified Chinese) and Noto Sans Arabic are
   bundled; the two Noto faces are also appended to every stack as a per-glyph

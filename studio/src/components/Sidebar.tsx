@@ -76,6 +76,7 @@ export function Sidebar({
   onTemplate,
   onLayout,
   onScreenOnly,
+  stripScope,
 }: {
   manifest: StoreManifest;
   platform: Platform;
@@ -103,6 +104,7 @@ export function Sidebar({
   onTemplate: (v: string) => void;
   onLayout: (v: string) => void;
   onScreenOnly: (v: boolean) => void;
+  stripScope?: { own: boolean; deviceLabel: string; onChange: (own: boolean) => void };
 }) {
   const deviceType = deviceTypeOf(device, platform);
   // The device picker lists the chosen type's devices only (iPhone sizes, say).
@@ -210,6 +212,7 @@ export function Sidebar({
           onTemplate={onTemplate}
           onLayout={onLayout}
           onScreenOnly={onScreenOnly}
+          stripScope={stripScope}
         />
       </div>
 
@@ -218,9 +221,6 @@ export function Sidebar({
           background={background}
           frames={frames}
           font={fontKey(manifest.design, fontFamily)}
-          template={template}
-          layout={layout}
-          screenOnly={screenOnly}
         />
       </footer>
     </aside>

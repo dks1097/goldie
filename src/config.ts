@@ -248,6 +248,31 @@ export type LoadedConfig = GoldieConfig & {
    * baked into `scene.layout` they would outrank every later template choice.
    */
   sceneLayouts?: Record<string, LayoutKey>;
+  /** Scene ids the design leaves out of the strip (goldie.design.json `hidden`). */
+  hidden?: string[];
+  /**
+   * Hidden scenes a visible two-screen layout still shows as its second screen:
+   * captured, but never given a tile of their own. Set by configForDevice.
+   */
+  lentScenes?: Scene[];
+  /**
+   * The strip as the config states it, before any strip design: the base a
+   * device's own design (goldie.design.json `devices`) is layered on instead
+   * of the shared design.
+   */
+  stripBase?: StripBase;
+  /** Devices that opted into a design of their own in the studio. */
+  deviceDesigns?: Partial<Record<DeviceKey, StripDesign>>;
+  /** One-run strip overrides (CLI flags), which apply to every device's design. */
+  runStrip?: StripDesign;
+};
+
+type StripBase = {
+  scenes: Scene[];
+  template: Theme["template"];
+  layout: Theme["layout"];
+  screenOnly: Theme["screenOnly"];
+  sceneLayouts?: Record<string, LayoutKey>;
 };
 
 /**
@@ -299,7 +324,23 @@ export async function loadConfig(path = defaultConfigPath()): Promise<LoadedConf
     }
   }
   resolveFontFiles(loaded); // config-relative font paths -> absolute, once
-  applyDesign(loaded, readDesign(path));
+  const design = readDesign(path);
+  applyLookDesign(loaded, design);
+  loaded.stripBase = {
+    scenes: structuredClone(loaded.scenes),
+    template: loaded.theme.template,
+    layout: loaded.theme.layout,
+    screenOnly: loaded.theme.screenOnly,
+    sceneLayouts: loaded.sceneLayouts,
+  };
+  applyStripDesign(loaded, design);
+  if (design.devices) {
+    for (const key of Object.keys(design.devices)) {
+      if (!isDeviceKey(key))
+        throw new Error(`goldie.design.json: unknown device "${key}" in devices`);
+    }
+    loaded.deviceDesigns = design.devices;
+  }
   // Fail at load time on a bad variant or missing bezel PNG; android devices
   // never load one from cfg.frame (drawn generic bezel or cfg.android.frame).
   for (const d of loaded.devices) if (DEVICES[d].platform !== "android") framePath(loaded, d);
@@ -336,13 +377,26 @@ function resolveFontFiles(cfg: LoadedConfig): void {
  * goldie.design.json so they survive a reload and apply to CLI runs too.
  * Every field is optional; a missing one leaves the config's value alone.
  */
-export type DesignOverrides = {
+export type DesignOverrides = StripDesign & {
   background?: string;
   frame?: FrameVariant;
   /** A variant per device key, as the studio's frame picker saves them. */
   frames?: Partial<Record<DeviceKey, FrameVariant>>;
   /** A full CSS font stack, as the studio's font picker produces. */
   fontFamily?: string;
+  /**
+   * Devices with a strip design of their own, switched on in the studio. A
+   * device listed here ignores the shared strip fields and uses its own;
+   * the look (background, frames, font) stays shared.
+   */
+  devices?: Partial<Record<DeviceKey, StripDesign>>;
+};
+
+/**
+ * What a strip shows and says: the part of a design a device can own. The
+ * shared design carries one; a device that opts in carries its own.
+ */
+export type StripDesign = {
   /** Copy edited in the studio, per screenshot scene id, then locale. */
   copy?: Record<string, SceneCopy>;
   /** Screenshot scene ids in the order the studio arranged them. */
@@ -354,6 +408,8 @@ export type DesignOverrides = {
   screenOnly?: boolean;
   /** Layout overrides per screenshot scene id. */
   sceneLayouts?: Record<string, LayoutKey>;
+  /** Scene ids (screenshots, or the preview) this strip leaves out; they are not captured either. */
+  hidden?: string[];
 };
 
 export type SceneCopy = {
@@ -379,6 +435,28 @@ export function readDesign(configPath: string): DesignOverrides {
 
 /** Layers design overrides (the sidecar, or CLI flags) onto a loaded config. */
 export function applyDesign(cfg: LoadedConfig, design: DesignOverrides): void {
+  applyLookDesign(cfg, design);
+  applyStripDesign(cfg, design);
+}
+
+/**
+ * One-run overrides (CLI flags): applied now, and kept so a device with a
+ * design of its own gets the strip ones too.
+ */
+export function applyRunOverrides(cfg: LoadedConfig, design: DesignOverrides): void {
+  applyDesign(cfg, design);
+  if (design.background && cfg.stripBase) {
+    for (const scene of cfg.stripBase.scenes) if (isScreenshot(scene)) scene.background = undefined;
+  }
+  const strip: StripDesign = {};
+  if (design.template !== undefined) strip.template = design.template;
+  if (design.layout) strip.layout = design.layout;
+  if (design.screenOnly !== undefined) strip.screenOnly = design.screenOnly;
+  if (Object.keys(strip).length > 0) cfg.runStrip = { ...cfg.runStrip, ...strip };
+}
+
+/** The shared look: background, bezels and font. */
+function applyLookDesign(cfg: LoadedConfig, design: DesignOverrides): void {
   if (design.background) {
     cfg.theme.background = design.background;
     for (const scene of cfg.scenes) if (isScreenshot(scene)) scene.background = undefined;
@@ -412,6 +490,10 @@ export function applyDesign(cfg: LoadedConfig, design: DesignOverrides): void {
     for (const d of cfg.devices) if (DEVICES[d].platform !== "android") framePath(cfg, d); // throws on an unknown variant
   }
   if (design.fontFamily) cfg.theme.fontFamily = design.fontFamily;
+}
+
+/** What the strip shows and says: copy, order, template, layouts, hidden scenes. */
+function applyStripDesign(cfg: LoadedConfig, design: StripDesign): void {
   if (design.copy) {
     for (const scene of cfg.scenes) {
       const copy = design.copy[scene.id];
@@ -434,6 +516,64 @@ export function applyDesign(cfg: LoadedConfig, design: DesignOverrides): void {
     }
     cfg.sceneLayouts = { ...cfg.sceneLayouts, ...overrides };
   }
+  if (design.hidden) cfg.hidden = design.hidden;
+}
+
+/**
+ * The config as one device renders it: its own strip design when it opted
+ * into one in the studio, else the shared one, minus the scenes that design
+ * hides. Every per-device step (capture, frame, preview, verify, the
+ * manifest's asset list) runs on this view.
+ */
+export function configForDevice(cfg: LoadedConfig, device: DeviceKey): LoadedConfig {
+  const own = cfg.deviceDesigns?.[device];
+  let view: LoadedConfig = cfg;
+  if (own && cfg.stripBase) {
+    const base = cfg.stripBase;
+    view = {
+      ...cfg,
+      // The config's per-scene layouts are shared-strip choices: the studio
+      // copies them into a device's own sceneLayouts when it opts in, so its
+      // template can then reach every scene.
+      scenes: structuredClone(base.scenes).map((s) =>
+        isScreenshot(s) ? { ...s, layout: undefined } : s,
+      ),
+      theme: {
+        ...cfg.theme,
+        template: base.template,
+        layout: base.layout,
+        screenOnly: base.screenOnly,
+      },
+      sceneLayouts: base.sceneLayouts ? { ...base.sceneLayouts } : undefined,
+      hidden: undefined,
+    };
+    applyStripDesign(view, own);
+    if (cfg.runStrip) applyStripDesign(view, cfg.runStrip);
+  }
+  const hidden = view.hidden ?? [];
+  if (hidden.length > 0) {
+    const visible = view.scenes.filter((s) => !hidden.includes(s.id));
+    // Hiding a scene takes away its tile, not its capture: a visible two-screen
+    // layout that names it as its second screen keeps showing it, as the studio
+    // does. A hidden secondScene no layout draws is dropped, so the layout falls
+    // back to its neighbour if it ever needs one.
+    const lent = new Set(
+      resolvedScenes({ ...view, scenes: visible })
+        .filter((r) => needsSecondCapture(r.layout) && r.secondScene && hidden.includes(r.secondScene))
+        .map((r) => r.secondScene!),
+    );
+    view = {
+      ...view,
+      scenes: visible.map((s) =>
+        isScreenshot(s) && s.secondScene && hidden.includes(s.secondScene) && !lent.has(s.secondScene)
+          ? { ...s, secondScene: undefined }
+          : s,
+      ),
+      lentScenes: view.scenes.filter((s) => lent.has(s.id)),
+    };
+  }
+  if (view !== cfg) validateLayouts(view);
+  return view;
 }
 
 function checkedLayout(key: string): LayoutKey {
@@ -468,7 +608,7 @@ export function validateLayouts(cfg: LoadedConfig): void {
   const template = cfg.theme.template;
   if (Array.isArray(template)) for (const key of template) checkedLayout(key);
   else if (template) checkedTemplate(template);
-  const shots = cfg.scenes.filter(isScreenshot);
+  const shots = [...cfg.scenes, ...(cfg.lentScenes ?? [])].filter(isScreenshot);
   for (const { scene, layout, secondScene } of resolvedScenes(cfg)) {
     if (scene.layout) checkedLayout(scene.layout);
     if (!needsSecondCapture(layout)) continue;
@@ -486,12 +626,6 @@ export function validateLayouts(cfg: LoadedConfig): void {
 }
 
 /**
- * Puts the screenshot scenes in the saved order. Ids missing from the order
- * (scenes added to the config since) keep their config position relative to
- * each other and follow the ordered ones; unknown ids are ignored. Other
- * scenes (the preview) stay where they are.
- */
-/**
  * The locales a command runs for: all of the config's, or the one --locale
  * asks for. A locale names output and capture directories, so a value outside
  * the config (a typo, or a path like "../x") is rejected rather than joined
@@ -505,6 +639,12 @@ export function selectLocales(locales: string[], requested?: string): string[] {
   return [requested];
 }
 
+/**
+ * Puts the screenshot scenes in the saved order. Ids missing from the order
+ * (scenes added to the config since) keep their config position relative to
+ * each other and follow the ordered ones; unknown ids are ignored. Other
+ * scenes (the preview) stay where they are.
+ */
 export function reorderScenes(scenes: Scene[], order: string[]): Scene[] {
   const shots = scenes.filter(isScreenshot);
   const rank = new Map(order.map((id, i) => [id, i]));

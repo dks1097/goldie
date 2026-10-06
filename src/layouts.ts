@@ -19,6 +19,7 @@ export const LAYOUT_KEYS = [
   "duo-tilt",
   "panorama",
   "panorama-duo",
+  "panorama-duo-upright",
   "minimal",
 ] as const;
 export type LayoutKey = (typeof LAYOUT_KEYS)[number];
@@ -189,6 +190,18 @@ export const LAYOUTS: Record<LayoutKey, LayoutSpec> = {
       { widthRatio: 0.8, x: 0.73, y: 0.7, rotate: -6, capture: "secondary" },
     ],
   },
+  "panorama-duo-upright": {
+    key: "panorama-duo-upright",
+    label: "Panorama duo upright",
+    description:
+      "Two tiles sharing one headline, a large upright screen centred in each tile, bleeding off the bottom only.",
+    span: 2,
+    copy: { position: "top", align: "center", heightRatio: 0.2, widthRatio: 1.6 },
+    devices: [
+      { widthRatio: 0.92, x: 0.25, y: 0.61, rotate: 0, capture: "primary" },
+      { widthRatio: 0.92, x: 0.75, y: 0.61, rotate: 0, capture: "secondary" },
+    ],
+  },
   minimal: {
     key: "minimal",
     label: "Minimal",
@@ -215,6 +228,7 @@ export const TEMPLATE_KEYS = [
   "showcase",
   "magazine",
   "storyboard",
+  "storyboard-upright",
   "dynamic",
 ] as const;
 export type TemplateKey = (typeof TEMPLATE_KEYS)[number];
@@ -256,6 +270,12 @@ export const TEMPLATES: Record<TemplateKey, TemplateSpec> = {
     label: "Storyboard",
     description: "A two-screen panorama, then a copy-below, a hero and a breather.",
     sequence: ["panorama-duo", "copy-below", "hero", "minimal", "tilt"],
+  },
+  "storyboard-upright": {
+    key: "storyboard-upright",
+    label: "Storyboard upright",
+    description: "Storyboard with an upright two-screen panorama opener.",
+    sequence: ["panorama-duo-upright", "copy-below", "hero", "minimal", "tilt"],
   },
   dynamic: {
     key: "dynamic",

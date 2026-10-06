@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { capture, captureLocales } from "./capture.ts";
 import {
-  applyDesign,
+  applyRunOverrides,
   FRAME_VARIANTS,
   type FrameVariant,
   isFrameVariant,
@@ -19,6 +19,7 @@ import { doctor } from "./doctor.ts";
 import { FONT_KEYS, fontStack } from "./fonts.ts";
 import { LAYOUT_KEYS, type LayoutKey, TEMPLATE_KEYS } from "./layouts.ts";
 import { writeManifest } from "./manifest.ts";
+import { removeScene } from "./remove.ts";
 import { renderPreview, renderScreenshots, verify } from "./render.ts";
 import { FlowFailure, repairBrief } from "./repair.ts";
 import { DEVICE_KEYS, type DeviceKey, isDeviceKey } from "./specs.ts";
@@ -33,6 +34,7 @@ goldie - App Store screenshots and previews, driven by argent
   goldie preview    Join the raw clips into the preview video (App Store upload; YouTube for Play)
   goldie verify     Check finished assets against the store spec tables
   goldie manifest   Write out/store.json for the studio app
+  goldie remove <scene-id>  Delete a scene (or the preview) everywhere: config, captures, renders, design
   goldie studio     Serve the studio at http://localhost:4321 (--port <n>, --no-open)
   goldie all        capture -> frame -> preview -> manifest -> verify
   goldie version    Print the installed goldie version (-v, --version)
@@ -83,7 +85,7 @@ async function main() {
     }
     frames[VARIANT_DEVICE[variant]] = variant;
   });
-  applyDesign(cfg, {
+  applyRunOverrides(cfg, {
     background: opt("background"),
     frames,
     fontFamily: font ? fontStack(font, cfg.theme.fontFiles) : undefined, // throws on an unknown key
@@ -122,6 +124,15 @@ async function main() {
     case "manifest":
       console.log(await writeManifest(cfg));
       return 0;
+
+    case "remove": {
+      const id = argv[1];
+      if (!id || id.startsWith("--")) throw new Error("Usage: goldie remove <scene-id>");
+      for (const line of await removeScene(cfg, id)) console.log(`  ${line}`);
+      // Reload so the manifest no longer lists the scene.
+      console.log(await writeManifest(await loadConfig(cfg.configPath)));
+      return 0;
+    }
 
     case "studio": {
       await writeManifest(cfg);

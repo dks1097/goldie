@@ -145,6 +145,7 @@ export function DesignPanel({
   onTemplate,
   onLayout,
   onScreenOnly,
+  stripScope,
 }: {
   design: Design;
   /** The device on show; the frame choices are the variants drawn for it. */
@@ -163,6 +164,11 @@ export function DesignPanel({
   onTemplate: (v: string) => void;
   onLayout: (v: string) => void;
   onScreenOnly: (v: boolean) => void;
+  /**
+   * Whether the device on show follows the shared strip or has its own copy,
+   * order, layouts and hidden screens. Absent with a single device configured.
+   */
+  stripScope?: { own: boolean; deviceLabel: string; onChange: (own: boolean) => void };
 }) {
   // Each choice is a full CSS font stack, so the Strip can use it as-is. A
   // config stack that matches none of them shows as "custom (from config)".
@@ -238,6 +244,23 @@ export function DesignPanel({
       <Field label="Font">
         <FontPicker value={fontFamily} onChange={onFontFamily} options={fontOptions} />
       </Field>
+
+      {stripScope ? (
+        <Field
+          label="Screens and copy"
+          hint={stripScope.own ? "Own design" : "Same on every device"}
+        >
+          <Tabs
+            value={stripScope.own ? "own" : "shared"}
+            onValueChange={(v) => stripScope.onChange(v === "own")}
+          >
+            <TabsList className="w-full">
+              <TabsTrigger value="shared">Shared</TabsTrigger>
+              <TabsTrigger value="own">{stripScope.deviceLabel} only</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </Field>
+      ) : null}
 
       <Field label="Template">
         <TemplatePicker design={design} value={template} layout={layout} onChange={onTemplate} />

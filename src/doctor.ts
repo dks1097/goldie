@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import * as argent from "./argent.ts";
-import { flowPath, type LoadedConfig } from "./config.ts";
+import { configForDevice, flowPath, type LoadedConfig } from "./config.ts";
 import * as device from "./device.ts";
 import { exec } from "./exec.ts";
 import { DEVICES } from "./specs.ts";
@@ -166,15 +166,16 @@ export async function doctor(cfg: LoadedConfig): Promise<boolean> {
   });
 
   // Each device replays its own copy of a flow when it has one, so every
-  // device's resolution is checked; a flow shared by all is listed once.
+  // device's resolution is checked (a flow shared by all is listed once), for
+  // the scenes its design shows: a hidden scene is never captured there.
   const checked = new Set<string>();
-  for (const scene of cfg.scenes) {
-    const flows =
-      scene.kind === "preview"
-        ? [...(scene.setup ? [scene.setup] : []), ...scene.segments.map((s) => s.flow)]
-        : [scene.flow];
-    for (const f of flows) {
-      for (const key of cfg.devices) {
+  for (const key of cfg.devices) {
+    for (const scene of configForDevice(cfg, key).scenes) {
+      const flows =
+        scene.kind === "preview"
+          ? [...(scene.setup ? [scene.setup] : []), ...scene.segments.map((s) => s.flow)]
+          : [scene.flow];
+      for (const f of flows) {
         const path = flowPath(cfg, f, key);
         if (checked.has(path)) continue;
         checked.add(path);

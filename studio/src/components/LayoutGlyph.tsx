@@ -23,9 +23,20 @@ function Tile({ spec, x }: { spec: LayoutSpec; x: number }) {
   const c = compose(spec, TILE, THEME);
   const copyLines: Array<{ x: number; y: number; w: number; h: number }> = [];
   if (c.copy) {
-    const lineH = TILE.height * 0.05;
-    const gap = TILE.height * 0.025;
     const widths = [0.78, 0.52];
+    let lineH = TILE.height * 0.05;
+    let gap = TILE.height * 0.025;
+    // Top copy shrinks to the room above the highest upright device, so a layout
+    // whose devices sit close to the headline still reads as copy over screens.
+    // A tilted frame's top is not its visual top, so tilted layouts keep the default.
+    const upright = c.devices.filter((d) => d.rotate === 0);
+    if (c.copy.position === "top" && upright.length > 0) {
+      const room = Math.min(...upright.map((d) => d.frame.top)) - TILE.height * 0.02 - c.copy.y;
+      const full = widths.length * lineH + (widths.length - 1) * gap;
+      const scale = Math.max(0.5, Math.min(1, room / full));
+      lineH *= scale;
+      gap *= scale;
+    }
     const blockH = widths.length * lineH + (widths.length - 1) * gap;
     const top = c.copy.position === "top" ? c.copy.y : c.copy.y - blockH;
     widths.forEach((f, i) => {
@@ -42,17 +53,6 @@ function Tile({ spec, x }: { spec: LayoutSpec; x: number }) {
       </clipPath>
       <rect width={c.width} height={c.height} rx={2} className="fill-muted" />
       <g clipPath={`url(#${clipId})`}>
-        {copyLines.map((l) => (
-          <rect
-            key={l.y}
-            x={l.x}
-            y={l.y}
-            width={l.w}
-            height={l.h}
-            rx={l.h / 2}
-            className="fill-muted-foreground/60"
-          />
-        ))}
         {c.devices.map((d) => (
           <rect
             key={`${d.capture}-${d.frame.left}`}
@@ -63,6 +63,18 @@ function Tile({ spec, x }: { spec: LayoutSpec; x: number }) {
             rx={d.screen.radius * 0.9}
             transform={`rotate(${d.rotate} ${d.frame.left + d.frame.width / 2} ${d.frame.top + d.frame.height / 2})`}
             className={d.capture === "primary" ? "fill-foreground/80" : "fill-foreground/40"}
+          />
+        ))}
+        {/* Copy last, so a device that reaches into the copy band never hides it. */}
+        {copyLines.map((l) => (
+          <rect
+            key={l.y}
+            x={l.x}
+            y={l.y}
+            width={l.w}
+            height={l.h}
+            rx={l.h / 2}
+            className="fill-muted-foreground/60"
           />
         ))}
       </g>
